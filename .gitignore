@@ -1,0 +1,43 @@
+# Android GitIgnore Configuration
+# This file prevents temporary build caches, binaries, and sensitive files from being pushed to GitHub.
+
+# Gradle files and cache folders
+.gradle/
+build/
+**/build/
+.build-outputs/
+build-outputs/
+captures/
+
+# Binary assets
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Signing credentials
+*.keystore
+*.jks
+*.pepk
+debug.keystore.base64
+
+# Local configuration & environment variables containing secrets
+local.properties
+.env
+.env.properties
+.env.local
+.env.*.local
+
+# External service / GCP credential configuration files
+google-services.json
+google-service-accounts.json
+service-account*.json
+*.pem
+*.p12
+*.json_credentials
+
+# OS and IDE files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

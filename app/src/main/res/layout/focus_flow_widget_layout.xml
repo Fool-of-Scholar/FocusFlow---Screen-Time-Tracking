@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@android:color/black"
+    android:padding="16dp"
+    android:gravity="center_vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="6dp">
+
+        <TextView
+            android:id="@+id/widget_header"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="FocusFlow Status ⏱️"
+            android:textColor="#82B1FF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_mode_indicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GOAL MODE"
+            android:textColor="#B0BEC5"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:background="#263238"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="1dp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_main_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="110m / 150m used"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:ellipsize="end"
+        android:singleLine="true" />
+
+    <ProgressBar
+        android:id="@+id/widget_progress_bar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:max="100"
+        android:progress="73"
+        android:progressTint="#29B6F6"
+        android:progressBackgroundTint="#37474F" />
+
+    <TextView
+        android:id="@+id/widget_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="73% of daily screentime. Reclaim today!"
+        android:textColor="#CFD8DC"
+        android:textSize="11sp"
+        android:ellipsize="end"
+        android:singleLine="true" />
+
+</LinearLayout>

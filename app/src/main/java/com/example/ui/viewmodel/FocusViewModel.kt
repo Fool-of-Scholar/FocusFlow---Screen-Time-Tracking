@@ -1,0 +1,707 @@
+package com.example.ui.viewmodel
+
+import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.database.FocusDatabase
+import com.example.data.model.AppUsage
+import com.example.data.model.AppLockSchedule
+import com.example.data.model.FocusTimelineEntry
+import com.example.data.model.MascotChatMessage
+import com.example.data.repository.FocusRepository
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import androidx.core.app.NotificationCompat
+
+class FocusViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val sharedPrefs: SharedPreferences = application.getSharedPreferences("focusflow_prefs_v5", Context.MODE_PRIVATE)
+    private val repository: FocusRepository
+
+    // Onboarding tutorial state
+    private val _showTutorial = MutableStateFlow(sharedPrefs.getBoolean("show_onboarding_tutorial_v5", true))
+    val showTutorial: StateFlow<Boolean> = _showTutorial.asStateFlow()
+
+    // Daily screen budget minutes (default calculated from questionnaire: 150m)
+    private val _dailyScreentimeGoalMinutes = MutableStateFlow(sharedPrefs.getInt("daily_screentime_goal_minutes_v5", 150))
+    val dailyScreentimeGoalMinutes: StateFlow<Int> = _dailyScreentimeGoalMinutes.asStateFlow()
+
+    // Option widget notification mode: "goal" (goal progression) or "comparison" (comparison to previous and current)
+    private val _widgetDisplayOption = MutableStateFlow(sharedPrefs.getString("widget_display_option_v5", "goal") ?: "goal")
+    val widgetDisplayOption: StateFlow<String> = _widgetDisplayOption.asStateFlow()
+
+    // Previous day screen time (default: 210 mins)
+    private val _previousScreentimeMinutes = MutableStateFlow(sharedPrefs.getInt("previous_screentime_minutes_v5", 210))
+    val previousScreentimeMinutes: StateFlow<Int> = _previousScreentimeMinutes.asStateFlow()
+
+    // Persistent Preferences from Me/Settings screenshots
+    private val _accessibilityPermissionGranted = MutableStateFlow(sharedPrefs.getBoolean("accessibility_granted_v5", false))
+    val accessibilityPermissionGranted: StateFlow<Boolean> = _accessibilityPermissionGranted.asStateFlow()
+
+    private val _usageAccessPermissionGranted = MutableStateFlow(sharedPrefs.getBoolean("usage_access_granted_v5", false))
+    val usageAccessPermissionGranted: StateFlow<Boolean> = _usageAccessPermissionGranted.asStateFlow()
+
+    fun setAccessibilityPermissionGranted(granted: Boolean) {
+        _accessibilityPermissionGranted.value = granted
+        sharedPrefs.edit().putBoolean("accessibility_granted_v5", granted).apply()
+    }
+
+    fun setUsageAccessPermissionGranted(granted: Boolean) {
+        _usageAccessPermissionGranted.value = granted
+        sharedPrefs.edit().putBoolean("usage_access_granted_v5", granted).apply()
+    }
+
+    private val _dailyRemindersMode = MutableStateFlow(sharedPrefs.getString("daily_reminders_mode_v5", "Standard Mode") ?: "Standard Mode")
+    val dailyRemindersMode: StateFlow<String> = _dailyRemindersMode.asStateFlow()
+
+    private val _soundEffectsOn = MutableStateFlow(sharedPrefs.getBoolean("sound_effects_on_v5", true))
+    val soundEffectsOn: StateFlow<Boolean> = _soundEffectsOn.asStateFlow()
+
+    private val _smartSkipOn = MutableStateFlow(sharedPrefs.getBoolean("smart_skip_on_v5", true))
+    val smartSkipOn: StateFlow<Boolean> = _smartSkipOn.asStateFlow()
+
+    private val _stopWhenGoalAchieved = MutableStateFlow(sharedPrefs.getBoolean("stop_when_goal_achieved_v5", true))
+    val stopWhenGoalAchieved: StateFlow<Boolean> = _stopWhenGoalAchieved.asStateFlow()
+
+    private val _lockBypassEnabled = MutableStateFlow(sharedPrefs.getBoolean("lock_bypass_enabled_v5", false))
+    val lockBypassEnabled: StateFlow<Boolean> = _lockBypassEnabled.asStateFlow()
+
+    fun toggleLockBypass(enabled: Boolean) {
+        _lockBypassEnabled.value = enabled
+        sharedPrefs.edit().putBoolean("lock_bypass_enabled_v5", enabled).apply()
+    }
+
+    // Custom reminder lead-time (e.g., 5, 15, 30 mins before)
+    private val _reminderLeadTimeMinutes = MutableStateFlow(sharedPrefs.getInt("reminder_lead_time_minutes_v5", 15))
+    val reminderLeadTimeMinutes: StateFlow<Int> = _reminderLeadTimeMinutes.asStateFlow()
+
+    fun updateReminderLeadTimeMinutes(minutes: Int) {
+        _reminderLeadTimeMinutes.value = minutes
+        sharedPrefs.edit().putInt("reminder_lead_time_minutes_v5", minutes).apply()
+        addNotificationLog("Config Updated ⚙️", "Reminder lead-time set to $minutes minutes before curfew locking.", "System")
+    }
+
+    // Sounds & Effects settings
+    private val _selectedSoundName = MutableStateFlow(sharedPrefs.getString("selected_sound_name_v5", "Zen Temple Gong 🔔") ?: "Zen Temple Gong 🔔")
+    val selectedSoundName: StateFlow<String> = _selectedSoundName.asStateFlow()
+
+    private val _selectedSoundDuration = MutableStateFlow(sharedPrefs.getInt("selected_sound_duration_v5", 3))
+    val selectedSoundDuration: StateFlow<Int> = _selectedSoundDuration.asStateFlow()
+
+    private val _soundVolume = MutableStateFlow(sharedPrefs.getFloat("sound_volume_v5", 0.7f))
+    val soundVolume: StateFlow<Float> = _soundVolume.asStateFlow()
+
+    private val _vibrationEnabled = MutableStateFlow(sharedPrefs.getBoolean("sound_vibration_enabled_v5", true))
+    val vibrationEnabled: StateFlow<Boolean> = _vibrationEnabled.asStateFlow()
+
+    fun updateSelectedSound(name: String, duration: Int) {
+        _selectedSoundName.value = name
+        _selectedSoundDuration.value = duration
+        sharedPrefs.edit()
+            .putString("selected_sound_name_v5", name)
+            .putInt("selected_sound_duration_v5", duration)
+            .apply()
+        addNotificationLog("Sound Profile Updated 🎵", "System focus alert profile is now configured to $name.", "Sound")
+    }
+
+    fun updateSoundVolume(volume: Float) {
+        _soundVolume.value = volume
+        sharedPrefs.edit().putFloat("sound_volume_v5", volume).apply()
+    }
+
+    fun toggleVibration(enabled: Boolean) {
+        _vibrationEnabled.value = enabled
+        sharedPrefs.edit().putBoolean("sound_vibration_enabled_v5", enabled).apply()
+    }
+
+    // Reactive Notification Log state
+    private val _notificationLogs = MutableStateFlow<List<NotificationLog>>(emptyList())
+    val notificationLogs: StateFlow<List<NotificationLog>> = _notificationLogs.asStateFlow()
+
+    fun addNotificationLog(title: String, message: String, category: String) {
+        val newLog = NotificationLog(
+            title = title,
+            message = message,
+            category = category
+        )
+        _notificationLogs.value = listOf(newLog) + _notificationLogs.value
+    }
+
+    fun clearAllNotificationLogs() {
+        _notificationLogs.value = emptyList()
+    }
+
+    // General preferences
+    private val _screentimeUnits = MutableStateFlow(sharedPrefs.getString("screw_units_v5", "Hours, Mins") ?: "Hours, Mins")
+    val screentimeUnits: StateFlow<String> = _screentimeUnits.asStateFlow()
+
+    private val _firstDayOfWeek = MutableStateFlow(sharedPrefs.getString("first_day_of_week_v5", "Sunday") ?: "Sunday")
+    val firstDayOfWeek: StateFlow<String> = _firstDayOfWeek.asStateFlow()
+
+    private val _dayStartsAt = MutableStateFlow(sharedPrefs.getString("day_starts_at_v5", "00:00") ?: "00:00")
+    val dayStartsAt: StateFlow<String> = _dayStartsAt.asStateFlow()
+
+    private val _timeFormatPreference = MutableStateFlow(sharedPrefs.getString("time_format_preference_v5", "Follow The System") ?: "Follow The System")
+    val timeFormatPreference: StateFlow<String> = _timeFormatPreference.asStateFlow()
+
+    private val _languageOptionPreference = MutableStateFlow(sharedPrefs.getString("language_option_pref_v5", "English") ?: "English")
+    val languageOptionPreference: StateFlow<String> = _languageOptionPreference.asStateFlow()
+
+    fun updateDailyRemindersMode(mode: String) {
+        _dailyRemindersMode.value = mode
+        sharedPrefs.edit().putString("daily_reminders_mode_v5", mode).apply()
+    }
+
+    fun toggleSoundEffects(enabled: Boolean) {
+        _soundEffectsOn.value = enabled
+        sharedPrefs.edit().putBoolean("sound_effects_on_v5", enabled).apply()
+    }
+
+    fun toggleSmartSkip(enabled: Boolean) {
+        _smartSkipOn.value = enabled
+        sharedPrefs.edit().putBoolean("smart_skip_on_v5", enabled).apply()
+    }
+
+    fun toggleStopWhenGoalAchieved(enabled: Boolean) {
+        _stopWhenGoalAchieved.value = enabled
+        sharedPrefs.edit().putBoolean("stop_when_goal_achieved_v5", enabled).apply()
+    }
+
+    fun updateScreentimeUnits(units: String) {
+        _screentimeUnits.value = units
+        sharedPrefs.edit().putString("screw_units_v5", units).apply()
+    }
+
+    fun updateFirstDayOfWeek(day: String) {
+        _firstDayOfWeek.value = day
+        sharedPrefs.edit().putString("first_day_of_week_v5", day).apply()
+    }
+
+    fun updateDayStartsAt(time: String) {
+        _dayStartsAt.value = time
+        sharedPrefs.edit().putString("day_starts_at_v5", time).apply()
+    }
+
+    fun updateTimeFormatPreference(format: String) {
+        _timeFormatPreference.value = format
+        sharedPrefs.edit().putString("time_format_preference_v5", format).apply()
+    }
+
+    fun updateLanguageOptionPreference(lang: String) {
+        _languageOptionPreference.value = lang
+        sharedPrefs.edit().putString("language_option_pref_v5", lang).apply()
+    }
+
+    // Feed streams from Room database
+    val usages: StateFlow<List<AppUsage>>
+    val schedules: StateFlow<List<AppLockSchedule>>
+    val timelineEntries: StateFlow<List<FocusTimelineEntry>>
+    val chatMessages: StateFlow<List<MascotChatMessage>>
+
+    // Sidebar filter
+    private val _appFilter = MutableStateFlow("All")
+    val appFilter: StateFlow<String> = _appFilter.asStateFlow()
+
+    // Preset / Custom preserved routines
+    private val _userPreservedDecks = MutableStateFlow<List<AppLockSchedule>>(emptyList())
+    val userPreservedDecks: StateFlow<List<AppLockSchedule>> = _userPreservedDecks.asStateFlow()
+
+    init {
+        val database = FocusDatabase.getDatabase(application)
+        repository = FocusRepository(database.focusDao())
+
+        // Setup reactive Room flow pipes
+        usages = repository.allUsagesFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        schedules = repository.allSchedulesFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        timelineEntries = repository.allTimelineEntriesFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        chatMessages = repository.allChatMessagesFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        // Ingest natural baseline starting values if DB is freshly generated
+        viewModelScope.launch {
+            usages.first().let { currentList ->
+                if (currentList.isEmpty()) {
+                    presetDefaultUsages()
+                }
+            }
+            schedules.first().let { currentScheds ->
+                if (currentScheds.isEmpty()) {
+                    presetDefaultSchedules()
+                }
+            }
+            timelineEntries.first().let { currentTimeline ->
+                if (currentTimeline.isEmpty()) {
+                    presetDefaultTimeline()
+                }
+            }
+            chatMessages.first().let { currentHistory ->
+                if (currentHistory.isEmpty()) {
+                    presetDefaultChat()
+                }
+            }
+        }
+
+        // Keep system status notification live & reactive
+        viewModelScope.launch {
+            usages.collect {
+                triggerAndroidNotification()
+            }
+        }
+
+        // Pre-populate premium realistic notification logs
+        val now = System.currentTimeMillis()
+        _notificationLogs.value = listOf(
+            NotificationLog(
+                title = "Sleep Curfew Impending ⚠️",
+                message = "Bedtime curfew starts in minutes. FocusFlow will shield TikTok and Instagram automatically.",
+                timestamp = now - (15 * 60 * 1000), // 15m ago
+                category = "Curfew"
+            ),
+            NotificationLog(
+                title = "3-Day Streak Maintained 🔥",
+                message = "Congratulations! Your consistent self-discipline habits have preserved your 3-day focus streak.",
+                timestamp = now - (2 * 3600 * 1000), // 2h ago
+                category = "Streak"
+            ),
+            NotificationLog(
+                title = "High Scrolling Screen Alert 📱",
+                message = "YouTube scrolling has reached 45 mins. Master Panda recommends a quick 1-minute breathing focus.",
+                timestamp = now - (5 * 3600 * 1000), // 5h ago
+                category = "Dopamine"
+            ),
+            NotificationLog(
+                title = "Curfew Block Enabled 🛡️",
+                message = "Instagram and Reddit are locked until 07:00 tomorrow under the Work Routine schedule.",
+                timestamp = now - (24 * 3600 * 1000), // 24h ago
+                category = "System"
+            )
+        )
+    }
+
+    fun triggerAndroidNotification() {
+        val context = getApplication<Application>()
+        try {
+            val totalTime = usages.value.sumOf { it.usageMinutes }
+            val goal = dailyScreentimeGoalMinutes.value
+            val widgetOption = widgetDisplayOption.value
+            val prevTime = previousScreentimeMinutes.value
+
+            // Cache current screentime for widget to display instantly
+            sharedPrefs.edit().putInt("current_screentime_minutes_v5", totalTime).apply()
+
+            // Broadcast update to homescreen widget
+            val updateIntent = Intent(context, com.example.service.FocusFlowWidgetProvider::class.java).apply {
+                action = android.appwidget.AppWidgetManager.ACTION_APPWIDGET_UPDATE
+            }
+            context.sendBroadcast(updateIntent)
+
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channelId = "focusflow_activity_v5"
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "FocusFlow Interactive Screen Progress",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Displays live-updated screentime and lock metrics on your system notification panel."
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val intent = Intent(context, Class.forName("com.example.MainActivity")).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val titleText = "FocusFlow Live Status ⏱️"
+            val textContent = if (widgetOption == "goal") {
+                val percent = if (goal > 0) (totalTime * 100) / goal else 100
+                "Spent: $totalTime mins ($percent% of daily $goal min goal)"
+            } else {
+                val diff = totalTime - prevTime
+                val diffText = if (diff < 0) "${-diff}m less than yesterday! 🎉" else "${diff}m more than yesterday. ⚠️"
+                "Spent today: $totalTime mins vs Yesterday average: $prevTime mins. ($diffText)"
+            }
+
+            val notification = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+                .setContentTitle(titleText)
+                .setContentText(textContent)
+                .setOngoing(true)
+                .setContentIntent(pendingIntent)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build()
+
+            notificationManager.notify(777, notification)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun updateDailyScreentimeGoal(minutes: Int) {
+        sharedPrefs.edit().putInt("daily_screentime_goal_minutes_v5", minutes).apply()
+        _dailyScreentimeGoalMinutes.value = minutes
+        triggerAndroidNotification()
+        addNotificationLog("Screentime Goal Updated 🎯", "Your daily screen budget is now set to $minutes minutes.", "Goal")
+    }
+
+    fun updateWidgetDisplayOption(option: String) {
+        sharedPrefs.edit().putString("widget_display_option_v5", option).apply()
+        _widgetDisplayOption.value = option
+        triggerAndroidNotification()
+        addNotificationLog("Widget Display Configured 📱", "Display preference updated to show '$option' configuration.", "Widget")
+    }
+
+    fun updatePreviousScreentime(minutes: Int) {
+        sharedPrefs.edit().putInt("previous_screentime_minutes_v5", minutes).apply()
+        _previousScreentimeMinutes.value = minutes
+        triggerAndroidNotification()
+        addNotificationLog("Baseline Sync Success 🔄", "Yesterday's reference screentime calibrated to $minutes minutes.", "System")
+    }
+
+    fun setAppFilter(filter: String) {
+        _appFilter.value = filter
+    }
+
+    fun getOnboardingSelection(key: String, default: String): String {
+        return sharedPrefs.getString("user_onboarding_$key", default) ?: default
+    }
+
+    fun saveOnboardingSelections(
+        role: String,
+        struggle: String,
+        currentUsage: String,
+        exercise: String,
+        sleepTime: String,
+        calculatedGoalMinutes: Int
+    ) {
+        sharedPrefs.edit().apply {
+            putString("user_onboarding_role", role)
+            putString("user_onboarding_struggle", struggle)
+            putString("user_onboarding_current_usage", currentUsage)
+            putString("user_onboarding_exercise", exercise)
+            putString("user_onboarding_sleep_time", sleepTime)
+            putInt("daily_screentime_goal_minutes_v5", calculatedGoalMinutes)
+            putBoolean("show_onboarding_tutorial_v5", false)
+            apply()
+        }
+        _dailyScreentimeGoalMinutes.value = calculatedGoalMinutes
+        _showTutorial.value = false
+
+        // Automatically setup a customized Bedtime / Curfew lockdown block based on sleepHour selection!
+        val startHour = try {
+            val parts = sleepTime.split(":")
+            val h = parts[0].toInt()
+            val prevHour = if (h == 0) 23 else h - 1
+            val formattedHour = if (prevHour < 10) "0$prevHour" else "$prevHour"
+            "$formattedHour:00"
+        } catch (e: Exception) {
+            "22:00"
+        }
+
+        val appToLock = when {
+            struggle.contains("Social", ignoreCase = true) -> "TikTok"
+            struggle.contains("Video", ignoreCase = true) -> "YouTube"
+            struggle.contains("Work", ignoreCase = true) -> "Slack"
+            else -> "Instagram"
+        }
+
+        viewModelScope.launch {
+            addLockSchedule(
+                appName = appToLock,
+                startTime = startHour,
+                endTime = sleepTime,
+                days = "Daily",
+                todo = "Wind down screen-free: offline paper book, light stretching, deep breaths.",
+                smsMsg = "FocusFlow Notification: Late night sleep lockdown active! Protect your bedtime rest."
+            )
+        }
+    }
+
+    fun dismissTutorial() {
+        _showTutorial.value = false
+        sharedPrefs.edit().putBoolean("show_onboarding_tutorial_v5", false).apply()
+    }
+
+    fun restartTutorial() {
+        _showTutorial.value = true
+        sharedPrefs.edit().putBoolean("show_onboarding_tutorial_v5", true).apply()
+    }
+
+    // Usages Actions
+    fun insertUsageRecord(appName: String, usageMinutes: Int, category: String, timestamp: Long = System.currentTimeMillis()) {
+        viewModelScope.launch {
+            repository.insertUsage(AppUsage(appName = appName, usageMinutes = usageMinutes, category = category, timestamp = timestamp))
+        }
+    }
+
+    fun deleteUsageRecord(usage: AppUsage) {
+        viewModelScope.launch {
+            repository.deleteUsage(usage)
+        }
+    }
+
+    fun updateUsageRecord(usage: AppUsage) {
+        viewModelScope.launch {
+            repository.updateUsage(usage)
+        }
+    }
+
+    fun clearAllUsages() {
+        viewModelScope.launch {
+            repository.deleteAllUsages()
+        }
+    }
+
+    // Schedules Actions
+    fun addLockSchedule(appName: String, startTime: String, endTime: String, days: String, todo: String, smsMsg: String, cooldownMinutes: Int = 0, usageThresholdMinutes: Int = 0) {
+        viewModelScope.launch {
+            repository.insertSchedule(
+                AppLockSchedule(
+                    appName = appName,
+                    startTime = startTime,
+                    endTime = endTime,
+                    daysOfWeek = days,
+                    todoWhileLocked = todo,
+                    customAlertSms = smsMsg,
+                    isLocked = true,
+                    cooldownMinutes = cooldownMinutes,
+                    usageThresholdMinutes = usageThresholdMinutes
+                )
+            )
+            addNotificationLog(
+                title = "Curfew Block Enabled 🛡️",
+                message = "The routine schedule '$appName' ($startTime - $endTime, $days) is armed. All distraction apps will lock during this period.",
+                category = "Curfew"
+            )
+        }
+    }
+
+    fun toggleScheduleLock(schedule: AppLockSchedule) {
+        viewModelScope.launch {
+            val updated = schedule.copy(isLocked = !schedule.isLocked)
+            repository.insertSchedule(updated)
+            val actionText = if (updated.isLocked) "Armed 🔒" else "Disarmed 🔓"
+            addNotificationLog(
+                title = "Schedule Toggled 🔄",
+                message = "Routine schedule '${schedule.appName}' has been $actionText.",
+                category = "Curfew"
+            )
+        }
+    }
+
+    fun deleteSchedule(id: Int) {
+        viewModelScope.launch {
+            repository.deleteScheduleById(id)
+            addNotificationLog(
+                title = "Schedule Deleted ❌",
+                message = "A curfew routine schedule was removed from the active lock registry.",
+                category = "System"
+            )
+        }
+    }
+
+    // Preserved Preset Decks Map
+    fun saveScheduleToPresets(appName: String, startTime: String, endTime: String, days: String, todo: String, smsMsg: String, cooldownMinutes: Int = 0, usageThresholdMinutes: Int = 0) {
+        val currentList = _userPreservedDecks.value.toMutableList()
+        currentList.add(
+            AppLockSchedule(
+                appName = appName,
+                startTime = startTime,
+                endTime = endTime,
+                daysOfWeek = days,
+                todoWhileLocked = todo,
+                customAlertSms = smsMsg,
+                isLocked = true,
+                cooldownMinutes = cooldownMinutes,
+                usageThresholdMinutes = usageThresholdMinutes
+            )
+        )
+        _userPreservedDecks.value = currentList
+    }
+
+    fun removeSavedPresetDeck(appName: String, startTime: String) {
+        val currentList = _userPreservedDecks.value.toMutableList()
+        currentList.removeAll { it.appName == appName && it.startTime == startTime }
+        _userPreservedDecks.value = currentList
+    }
+
+    // Timeline journal Actions
+    fun addJournalEntry(stars: Int, journalText: String, feelingTags: String, dateString: String) {
+        viewModelScope.launch {
+            val feedback = when (stars) {
+                5 -> "Sensational zen state! Zero distraction slips. Your morning routine is doing wonders 🌟."
+                4 -> "Outstanding focus block. Slipping only briefly. Keep cultivating those deep intervals!"
+                3 -> "Decent balance, but let's seal late night lock gaps. Put down secondary screens 1h earlier."
+                2 -> "Tough scrolling waves today! Do not judge yourself, just leverage curfew locks to assist recovery."
+                else -> "Mindful warning: High scrolling loops logged. Let's install a proactive 30-min active lock limit."
+            }
+
+            repository.insertTimelineEntry(
+                FocusTimelineEntry(
+                    dateString = dateString,
+                    pulseScore = stars,
+                    journalText = journalText,
+                    feelingTags = feelingTags,
+                    coachFeedback = feedback
+                )
+            )
+            addNotificationLog(
+                title = "Focus Reflection Logged 📝",
+                message = "Progress pulse rating ($stars stars) recorded successfully. Master Panda feedback: $feedback",
+                category = "Streak"
+            )
+        }
+    }
+
+    // AI Mascot Helper Chat Actions
+    fun sendChatMessage(text: String) {
+        viewModelScope.launch {
+            // 1. Insert user message in DB
+            repository.insertChatMessage(MascotChatMessage(text = text, isUser = true))
+
+            // 2. Generate custom responsive chatbot suggestions from Mentor Master Panda!
+            val trimmed = text.trim().lowercase()
+            val (answer, expr) = when {
+                trimmed.contains("lock") || trimmed.contains("block") -> {
+                    Pair("Understood! If you want to clamp down on distraction, go to the 'Schedules' tab to deploy a persistent lock with automatic SMS nudges! Or ask me anytime 🔒.", "focused")
+                }
+                trimmed.contains("tired") || trimmed.contains("sleep") || trimmed.contains("night") -> {
+                    Pair("Ah, screen brightness strains eye sensory cells. I suggest turning on your nocturnal Curfew scheduler to protect mental energy recharge!", "sleepy")
+                }
+                trimmed.contains("stress") || trimmed.contains("anxious") || trimmed.contains("hard") -> {
+                    Pair("Breathe with me: Inhale for 4s, hold for 4s, exhale for 4s. Digital scroll storms try to capture dopamine loops. You are in command 🧘.", "sad")
+                }
+                trimmed.contains("hi") || trimmed.contains("hello") || trimmed.contains("panda") -> {
+                    Pair("Hello there! I'm Master Panda, your personal mental coaching companion. Let's conquer digital habits together today! How can I support you?", "happy")
+                }
+                else -> {
+                    Pair("I hear you! Cultivating conscious attention takes systematic practice. Try setting up a curated deep study lock, or log your pulse score in our Today journal logs so we can design active progress metrics together!", "happy")
+                }
+            }
+
+            repository.insertChatMessage(MascotChatMessage(text = answer, isUser = false, expression = expr))
+        }
+    }
+
+    fun clearChatHistory() {
+        viewModelScope.launch {
+            repository.deleteChatHistory()
+            presetDefaultChat()
+        }
+    }
+
+    // Presets
+    private suspend fun presetDefaultUsages() {
+        val preset = listOf(
+            AppUsage(appName = "TikTok", usageMinutes = 110, category = "Distraction"),
+            AppUsage(appName = "YouTube", usageMinutes = 65, category = "Distraction"),
+            AppUsage(appName = "Android Studio", usageMinutes = 95, category = "Productive"),
+            AppUsage(appName = "Notion Docs", usageMinutes = 35, category = "Productive"),
+            AppUsage(appName = "Slack", usageMinutes = 20, category = "Productive")
+        )
+        for (u in preset) repository.insertUsage(u)
+    }
+
+    private suspend fun presetDefaultSchedules() {
+        val preset = listOf(
+            AppLockSchedule(
+                appName = "TikTok",
+                startTime = "21:00",
+                endTime = "23:00",
+                daysOfWeek = "Daily",
+                todoWhileLocked = "Physical reading & deep restorative sleep prep",
+                customAlertSms = "FocusFlow Alert: TikTok locked! Stay off early scrolling.",
+                isLocked = true
+            )
+        )
+        for (s in preset) repository.insertSchedule(s)
+    }
+
+    private suspend fun presetDefaultTimeline() {
+        val preset = listOf(
+            FocusTimelineEntry(
+                dateString = "June 3",
+                pulseScore = 4,
+                journalText = "I held a solid work rhythm in Kotlin today. Evaded high scrolling loops.",
+                feelingTags = "Productive, Calm",
+                coachFeedback = "Awesome progress! Restricting morning phone scrolls gave you a clean energy surge.",
+                timestamp = System.currentTimeMillis() - 86400000
+            ),
+            FocusTimelineEntry(
+                dateString = "June 2",
+                pulseScore = 2,
+                journalText = "Slit into a 2h afternoon video stream. Slept quite lately.",
+                feelingTags = "Anxious, Tired",
+                coachFeedback = "We learn from slips! Let's schedule a 30-min active lock limit on YouTube for tomorrow.",
+                timestamp = System.currentTimeMillis() - (86400000 * 2)
+            )
+        )
+        for (t in preset) repository.insertTimelineEntry(t)
+    }
+
+    private suspend fun presetDefaultChat() {
+        repository.insertChatMessage(
+            MascotChatMessage(
+                text = "Greetings! I'm Master Panda, your personal smart focus mentor. Tap here or ask me anything to coordinate lockdowns, mindfulness pauses, and habits!",
+                isUser = false,
+                expression = "happy"
+            )
+        )
+    }
+}
+
+data class NotificationLog(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val message: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val category: String, // "Curfew", "Streak", "Dopamine", "System"
+    val isUnread: Boolean = true
+)
+
+fun isTimeInSchedule(startTime: String, endTime: String): Boolean {
+    try {
+        val calendar = java.util.Calendar.getInstance()
+        val currentHour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+        val currentMinute = calendar.get(java.util.Calendar.MINUTE)
+        val currentMinutes = currentHour * 60 + currentMinute
+
+        val startParts = startTime.split(":")
+        val startHour = startParts[0].toIntOrNull() ?: 22
+        val startMinute = startParts.getOrNull(1)?.toIntOrNull() ?: 0
+        val startMinutes = startHour * 60 + startMinute
+
+        val endParts = endTime.split(":")
+        val endHour = endParts[0].toIntOrNull() ?: 7
+        val endMinute = endParts.getOrNull(1)?.toIntOrNull() ?: 0
+        val endMinutes = endHour * 60 + endMinute
+
+        return if (startMinutes <= endMinutes) {
+            currentMinutes in startMinutes..endMinutes
+        } else {
+            currentMinutes >= startMinutes || currentMinutes <= endMinutes
+        }
+    } catch (e: Exception) {
+        return true
+    }
+}

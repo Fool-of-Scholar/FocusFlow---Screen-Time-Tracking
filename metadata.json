@@ -1,0 +1,6 @@
+{
+  "name": "FocusFlow",
+  "description": "Track screen time, categorize productive vs distracting apps, schedule locking/cooldowns, and get daily AI habit guidance from a charming panda mascot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
