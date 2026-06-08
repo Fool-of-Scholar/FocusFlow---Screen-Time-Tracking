@@ -32,7 +32,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AppUsage
-import com.example.ui.components.PandaMascot
 import com.example.ui.viewmodel.FocusViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -44,6 +43,22 @@ fun DashboardScreen(viewModel: FocusViewModel) {
     val usages by viewModel.usages.collectAsState()
     val dailyScreentimeGoalMinutes by viewModel.dailyScreentimeGoalMinutes.collectAsState()
     val previousScreentimeMinutes by viewModel.previousScreentimeMinutes.collectAsState()
+
+    // Auto-log the FocusFlow app open session at first render (tracks when user opens the app)
+    // Records 1 minute for "FocusFlow" as a Productive session to reflect active engagement
+    var sessionStartMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    DisposableEffect(Unit) {
+        sessionStartMs = System.currentTimeMillis()
+        onDispose {
+            val sessionMinutes = ((System.currentTimeMillis() - sessionStartMs) / 60000L).toInt().coerceAtLeast(1)
+            viewModel.insertUsageRecord(
+                appName = "FocusFlow",
+                usageMinutes = sessionMinutes,
+                category = "Productive",
+                timestamp = sessionStartMs
+            )
+        }
+    }
 
     // Top Tabs: 0 -> DAY, 1 -> WEEK, 2 -> MONTH (All CAPS, matches the image exactly!)
     var activeTab by remember { mutableIntStateOf(0) }
@@ -141,14 +156,15 @@ fun DashboardScreen(viewModel: FocusViewModel) {
         }
     }
 
-    // Tab Header Selection (DAY, WEEK, MONTH in bold white styled design)
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 0.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
+    // DASHBOARD CONTAINER: LazyColumn wrapped in a Box to allow FAB overlay
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 0.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
         // TOP FIXED SEGMENT TABS (Matches "DAY", "WEEK", "MONTH" with white indicator line)
         item {
             Box(
@@ -257,6 +273,58 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                         ) Color.White else Color.White.copy(alpha = 0.25f),
                         modifier = Modifier.size(32.dp)
                     )
+                }
+            }
+        }
+
+        // MASCOT HEADER CARD (Inspired by the Personal Goals banner layout)
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F111E))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B223C)),
+                    border = BorderStroke(1.dp, Color(0xFF2C355A))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .fillMaxWidth(0.65f)
+                        ) {
+                            Text(
+                                text = "PERSONAL GOALS",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Track what matters",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                        }
+                        
+                        Image(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_sleeping_view),
+                            contentDescription = "Sleeping Cat Mascot",
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .size(90.dp)
+                        )
+                    }
                 }
             }
         }
@@ -375,9 +443,10 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    PandaMascot(
-                        modifier = Modifier.size(80.dp),
-                        expression = "focused"
+                    Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                        contentDescription = "Cat Mascot Head",
+                        modifier = Modifier.size(80.dp)
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
@@ -509,10 +578,28 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                     }
                 }
             }
-        }
-    }
+        } // end else
+    } // end LazyColumn
 
-    // SHARED POPUP DIALOG FOR ADDING & EDITING SCREEN USAGES
+        // Floating Action Button — always visible so users can add records even when list is non-empty
+        FloatingActionButton(
+            onClick = {
+                showAddDialog = true
+                editingUsage = null
+                appNameInput = ""
+                usageMinutesInput = ""
+                categoryInput = "Distraction"
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(24.dp)
+                .testTag("dashboard_add_fab"),
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Log new app usage")
+        }
+    } // end Box
     if (showAddDialog) {
         val editing = editingUsage
         

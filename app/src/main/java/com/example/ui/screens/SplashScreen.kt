@@ -20,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.components.PandaMascot
 import com.example.ui.theme.DeepMidnight
 import com.example.ui.theme.GalacticTeal
 import com.example.ui.theme.SlateCard
@@ -123,9 +122,10 @@ fun SplashScreen(onFinished: () -> Unit) {
                 }
 
                 // Mascot in the center
-                PandaMascot(
-                    modifier = Modifier.size(100.dp),
-                    expression = "happy"
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                    contentDescription = "Cat Mascot Head",
+                    modifier = Modifier.size(100.dp)
                 )
             }
 

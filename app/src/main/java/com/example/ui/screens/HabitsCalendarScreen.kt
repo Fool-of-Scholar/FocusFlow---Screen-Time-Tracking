@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.ui.components.PandaMascot
 import com.example.ui.viewmodel.FocusViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,7 +57,7 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Pulse Star Logs",
+                        text = "Diary",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Black
                     )
@@ -83,12 +82,15 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f))
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    PandaMascot(modifier = Modifier.size(60.dp), expression = "happy")
-                    Column {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(
                             "MENTAL HEALING SCORECARD",
                             style = MaterialTheme.typography.labelSmall,
@@ -97,11 +99,19 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Logging your mental tension pulse assists Coach Master Panda to adjust limits dynamically to protect raw cognitive energy.",
+                            "Logging your mental tension pulse assists Coach Master Kitty to adjust limits dynamically to protect raw cognitive energy.",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium
                         )
                     }
+                    
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_stretching_view),
+                        contentDescription = "Cat Mascot Stretching",
+                        modifier = Modifier
+                            .size(75.dp)
+                            .align(Alignment.CenterVertically)
+                    )
                 }
             }
         }
@@ -124,7 +134,11 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        PandaMascot(modifier = Modifier.size(72.dp), expression = "sleepy")
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                            contentDescription = "Cat Mascot Head",
+                            modifier = Modifier.size(72.dp)
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "No diary logs found.",
@@ -203,6 +217,7 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                             )
                         }
 
+                        /* Hide Coach Evaluation for now (AI feature planned for future release)
                         if (entry.coachFeedback.isNotBlank()) {
                             Spacer(modifier = Modifier.height(12.dp))
                             Surface(
@@ -215,7 +230,11 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     val mentorExpr = if (entry.pulseScore >= 4) "happy" else "sad"
-                                    PandaMascot(modifier = Modifier.size(44.dp), expression = mentorExpr)
+                                    androidx.compose.foundation.Image(
+                                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                                        contentDescription = "Cat Mascot Head",
+                                        modifier = Modifier.size(44.dp)
+                                    )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             "COACH EVALUATION",
@@ -232,6 +251,7 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                                 }
                             }
                         }
+                        */
                     }
                 }
             }

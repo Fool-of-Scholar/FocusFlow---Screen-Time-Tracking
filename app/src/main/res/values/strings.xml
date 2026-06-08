@@ -1,3 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FocusFlow</string>
+    <string name="tab_active_locks">Active Locks 🔒</string>
+    <string name="tab_visualizer">Visualizer 📊</string>
+    <string name="tab_classifier">Classifier 🏷️</string>
+    <string name="limit_target">Limit Target</string>
+    <string name="next_lock">Next Lock</string>
+    <string name="no_active_curfews">No active curfews</string>
+    <string name="spent_on_phone">spent on phone today (%1$d mins)</string>
+    <string name="home_streak">🔥 %1$d-day streak</string>
+    <string name="action_needed">Action Needed: Access Blockers Active?</string>
+    <string name="me_header_title">Focus Warrior ⚔️</string>
+    <string name="me_sync_data">Synchronize Data</string>
+    <string name="me_streak">Streak 🔥</string>
+    <string name="me_daily_goal">Daily Goal</string>
+    <string name="me_section_focus">Focus Goal &amp; Strategy 🎯</string>
+    <string name="me_section_reminders">Reminder Settings 🔔</string>
+    <string name="me_section_sounds">Sounds &amp; Effects 🎵</string>
+    <string name="me_section_widget">Widget Settings 🧩</string>
+    <string name="me_section_general">General ⚙️</string>
+    <string name="me_section_support">Support 💌</string>
+    <string name="active_lockdown">⏰ Active Lockdown: %1$s (%2$s - %3$s)</string>
 </resources>

@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,8 +35,13 @@ import androidx.compose.ui.unit.sp
 import android.widget.Toast
 import android.provider.Settings
 import android.content.Intent
-import com.example.ui.components.PandaMascot
 import com.example.ui.viewmodel.FocusViewModel
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import com.example.service.FocusFlowWidgetProvider
+import android.os.Build
+import android.app.Activity
+import com.google.android.play.core.review.ReviewManagerFactory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +58,8 @@ fun HomeScreen(
     val accessibilityGranted by viewModel.accessibilityPermissionGranted.collectAsState()
     val usageAccessGranted by viewModel.usageAccessPermissionGranted.collectAsState()
     val soundEffectsOn by viewModel.soundEffectsOn.collectAsState()
+    val screentimeUnits by viewModel.screentimeUnits.collectAsState()
+    val timeFormatPreference by viewModel.timeFormatPreference.collectAsState()
     val context = LocalContext.current
 
     // Alert sound & notifications states
@@ -64,7 +72,6 @@ fun HomeScreen(
     var showNotificationLogsSheet by remember { mutableStateOf(false) }
     var showSoundsEffectsSheet by remember { mutableStateOf(false) }
     var logsTrackingEnabled by remember { mutableStateOf(true) }
-    var alertFrequencyLevel by remember { mutableFloatStateOf(3f) } // 1 to 5 scale
 
     var showLocksFaq by remember { mutableStateOf(false) }
     var customAppName by remember { mutableStateOf("") }
@@ -81,7 +88,42 @@ fun HomeScreen(
     val isOverLimit = remember(totalTime, dailyScreentimeGoalMinutes) { totalTime > dailyScreentimeGoalMinutes }
     val progressColor = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
 
+    // Streak from timeline entries (1 entry = 1 focus day)
+    val timelineEntries by viewModel.timelineEntries.collectAsState()
+    val currentStreak = remember(timelineEntries) { timelineEntries.size.coerceAtMost(999) }
+
+    // Persisted alert frequency level
+    val alertFrequencyLevel by viewModel.alertFrequencyLevel.collectAsState()
+
     val scrollState = rememberScrollState()
+
+    // GOOGLE PLAY IN-APP REVIEW TRIGGER (3-Day Streak)
+    val sharedPrefs = remember { context.getSharedPreferences("focusflow_prefs_v5", android.content.Context.MODE_PRIVATE) }
+    LaunchedEffect(currentStreak) {
+        if (currentStreak >= 3) {
+            val hasPrompted = sharedPrefs.getBoolean("has_prompted_review_v5", false)
+            if (!hasPrompted) {
+                try {
+                    val reviewManager = ReviewManagerFactory.create(context)
+                    val request = reviewManager.requestReviewFlow()
+                    request.addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            val reviewInfo = task.result
+                            val activity = context as? Activity
+                            if (activity != null) {
+                                val flow = reviewManager.launchReviewFlow(activity, reviewInfo)
+                                flow.addOnCompleteListener { _ ->
+                                    sharedPrefs.edit().putBoolean("has_prompted_review_v5", true).apply()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -109,7 +151,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "🔥 3-day streak",
+                        text = stringResource(id = com.example.R.string.home_streak, currentStreak),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -170,22 +212,27 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            val hoursDecimal = totalTime / 60.0
-            val formattedHours = String.format(java.util.Locale.US, "%.1f", hoursDecimal)
+            val isMinsOnly = screentimeUnits == "Mins Only"
+            val displayValue = if (isMinsOnly) {
+                totalTime.toString()
+            } else {
+                String.format(java.util.Locale.US, "%.1f", totalTime / 60.0)
+            }
+            val displayUnit = if (isMinsOnly) "MINS" else "HRS"
             
             Row(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = formattedHours,
+                    text = displayValue,
                     style = MaterialTheme.typography.displayLarge.copy(fontSize = 68.sp),
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "HRS",
+                    text = displayUnit,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.outline,
@@ -193,7 +240,7 @@ fun HomeScreen(
                 )
             }
             Text(
-                text = "spent on phone today ($totalTime mins)",
+                text = stringResource(id = com.example.R.string.spent_on_phone, totalTime),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline
             )
@@ -242,7 +289,7 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "Limit Target",
+                                text = stringResource(id = com.example.R.string.limit_target),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.outline
@@ -299,7 +346,7 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "Next Lock",
+                            text = stringResource(id = com.example.R.string.next_lock),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.outline
@@ -309,9 +356,21 @@ fun HomeScreen(
                         // Dynamically look up next schedule curfew
                         val nextSched = schedules.firstOrNull { it.isLocked }
                         val nextLockText = if (nextSched != null) {
-                            "${nextSched.appName}: ${nextSched.startTime}"
+                            val timeStr = nextSched.startTime
+                            val formattedTime = if (timeFormatPreference == "12-hour") {
+                                val parts = timeStr.split(":")
+                                if (parts.size == 2) {
+                                    val h24 = parts[0].toIntOrNull() ?: 0
+                                    val m = parts[1]
+                                    val amPm = if (h24 >= 12) "PM" else "AM"
+                                    var h12 = h24 % 12
+                                    if (h12 == 0) h12 = 12
+                                    "$h12:$m $amPm"
+                                } else timeStr
+                            } else timeStr
+                            "${nextSched.appName}: $formattedTime"
                         } else {
-                            "No active curfews"
+                            stringResource(id = com.example.R.string.no_active_curfews)
                         }
                         Text(
                             text = nextLockText,
@@ -343,37 +402,73 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(
-                            imageVector = if (widgetDisplayOption == "goal") Icons.Default.CheckCircle else Icons.Default.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "LIVE PHONE WIDGET & NOTIFICATION ACTIVE PREVIEW",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(
+                                imageVector = if (widgetDisplayOption == "goal") Icons.Default.CheckCircle else Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "LIVE PHONE WIDGET & NOTIFICATION ACTIVE PREVIEW",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                maxLines = 1
+                            )
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            Text(
+                                text = "Pin to Home Screen",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(top = 4.dp, start = 22.dp)
+                                    .clickable {
+                                        val appWidgetManager = AppWidgetManager.getInstance(context)
+                                        val myProvider = ComponentName(context, FocusFlowWidgetProvider::class.java)
+                                        if (appWidgetManager.isRequestPinAppWidgetSupported) {
+                                            appWidgetManager.requestPinAppWidget(myProvider, null, null)
+                                        } else {
+                                            Toast.makeText(context, "Launcher does not support pinning.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                            )
+                        }
                     }
                     
-                    Surface(
+                    Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f))
                             .clickable {
                                 val nextOption = if (widgetDisplayOption == "goal") "comparison" else "goal"
                                 viewModel.updateWidgetDisplayOption(nextOption)
                             }
-                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        Text(
-                            text = "Toggle Mode 🔄",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Toggle Mode",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
 
@@ -386,121 +481,136 @@ fun HomeScreen(
                     },
                     label = "widget_switcher"
                 ) { targetOption ->
-                    if (targetOption == "goal") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surface)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            PandaMascot(
-                                modifier = Modifier.size(48.dp),
-                                expression = if (isOverLimit) "sad" else "happy"
-                            )
-                            
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        if (targetOption == "goal") {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 85.dp)
+                                    .align(Alignment.Center),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "FocusFlow Widget 📱",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "${((totalTime.toFloat() / dailyScreentimeGoalMinutes * 100).toInt()).coerceAtLeast(0)}%",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Black,
+                                            color = progressColor
+                                        )
+                                    }
+                                    
+                                    LinearProgressIndicator(
+                                        progress = { (totalTime.toFloat() / dailyScreentimeGoalMinutes).coerceAtMost(1f) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 6.dp)
+                                            .height(8.dp)
+                                            .clip(CircleShape),
+                                        color = progressColor,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                    Text(
+                                        text = "$totalTime mins used out of $dailyScreentimeGoalMinutes goal",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        } else {
+                            val diff = totalTime - previousScreentimeMinutes
+                            val percentShift = if (previousScreentimeMinutes > 0) (diff.toFloat() / previousScreentimeMinutes * 100).toInt() else 0
+                            val improvement = diff <= 0
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 85.dp)
+                                    .align(Alignment.Center),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp)
                                 ) {
                                     Text(
-                                        text = "FocusFlow Widget 📱",
+                                        text = "FocusFlow Widget: Shift Tracker 📊",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    Text(
-                                        text = "${((totalTime.toFloat() / dailyScreentimeGoalMinutes * 100).toInt()).coerceAtLeast(0)}%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Black,
-                                        color = progressColor
-                                    )
-                                }
-                                
-                                LinearProgressIndicator(
-                                    progress = { (totalTime.toFloat() / dailyScreentimeGoalMinutes).coerceAtMost(1f) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp)
-                                        .height(6.dp)
-                                        .clip(CircleShape),
-                                    color = progressColor,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
-                                Text(
-                                    text = "$totalTime mins used out of $dailyScreentimeGoalMinutes goal",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    } else {
-                        val diff = totalTime - previousScreentimeMinutes
-                        val percentShift = if (previousScreentimeMinutes > 0) (diff.toFloat() / previousScreentimeMinutes * 100).toInt() else 0
-                        val improvement = diff <= 0
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surface)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            PandaMascot(
-                                modifier = Modifier.size(48.dp),
-                                expression = if (improvement) "focused" else "sad"
-                            )
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "FocusFlow Widget: Shift Tracker 📊",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = "Today: $totalTime m",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "Prev Day: $previousScreentimeMinutes m",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-
-                                    Surface(
-                                        color = if (improvement) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
-                                        shape = RoundedCornerShape(8.dp)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = if (improvement) " ${-diff} min decline! " else " +$diff min increase! ",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Black,
-                                            color = if (improvement) Color(0xFF2EBD6B) else Color(0xFFE53935),
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
+                                        Column {
+                                            Text(
+                                                text = "Today: $totalTime m",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = "Prev Day: $previousScreentimeMinutes m",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+
+                                        Surface(
+                                            color = if (improvement) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = if (improvement) " ${-diff} min decline! " else " +$diff min increase! ",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Black,
+                                                color = if (improvement) Color(0xFF2EBD6B) else Color(0xFFE53935),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
+
+                        // Cat Mascot standing on the left side of the widget card
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_full_view),
+                            contentDescription = "Cat Mascot",
+                            modifier = Modifier
+                                .size(110.dp)
+                                .align(Alignment.CenterStart)
+                        )
                     }
                 }
             }
@@ -515,7 +625,11 @@ fun HomeScreen(
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            val tabs = listOf("Active Locks 🔒", "Visualizer 📊", "Classifier 🏷️")
+            val tabs = listOf(
+                stringResource(id = com.example.R.string.tab_active_locks),
+                stringResource(id = com.example.R.string.tab_visualizer),
+                stringResource(id = com.example.R.string.tab_classifier)
+            )
             tabs.forEachIndexed { index, title ->
                 val isSelected = homeActiveTab == index
                 Box(
@@ -630,7 +744,7 @@ fun HomeScreen(
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Warning, contentDescription = "Alert", tint = MaterialTheme.colorScheme.error)
                                     Text(
-                                        text = "Action Needed: Access Blockers Active?",
+                                        text = stringResource(id = com.example.R.string.action_needed),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onErrorContainer
@@ -716,12 +830,6 @@ fun HomeScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        IconButton(
-                            modifier = Modifier.testTag("fast_add_usage_indicator"),
-                            onClick = { showAddUsageDialog = true }
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add quick mock usage", tint = MaterialTheme.colorScheme.primary)
-                        }
                     }
 
                     val distractionApps = remember(usages) { usages.filter { it.category == "Distraction" } }
@@ -738,7 +846,11 @@ fun HomeScreen(
                                 verticalArrangement = Arrangement.Center,
                                 modifier = Modifier.padding(24.dp)
                             ) {
-                                PandaMascot(modifier = Modifier.size(90.dp), expression = "sleepy")
+                                androidx.compose.foundation.Image(
+                                    painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                                    contentDescription = "Cat Mascot Head",
+                                    modifier = Modifier.size(90.dp)
+                                )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
                                     text = "No distracting apps flagged yet!",
@@ -808,20 +920,18 @@ fun HomeScreen(
                                                 }
                                             }
                                             
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                Switch(
-                                                    checked = true,
-                                                    onCheckedChange = { active ->
-                                                        if (!active) {
-                                                            viewModel.insertUsageRecord(
-                                                                appName = app.appName,
-                                                                usageMinutes = app.usageMinutes,
-                                                                category = "Productive"
-                                                            )
-                                                            Toast.makeText(context, "✅ ${app.appName} categorized as Productive.", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    },
-                                                    modifier = Modifier.testTag("home_instant_toggle_${app.appName}")
+                                            // Status badge — shows live lock/shield state
+                                            Surface(
+                                                color = if (isLocked) Color(0xFFEF5350).copy(alpha = 0.15f)
+                                                        else Color(0xFF2EBD6B).copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(20.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isLocked) "🚫 Locked" else "🛡️ Armed",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = if (isLocked) Color(0xFFEF5350) else Color(0xFF2EBD6B),
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                                 )
                                             }
                                         }
@@ -832,6 +942,29 @@ fun HomeScreen(
                                             val activeSched = activeScheduleRunning
                                             val startTime = activeSched?.startTime ?: "22:00"
                                             val endTime = activeSched?.endTime ?: "07:00"
+
+                                            val formattedStart = if (timeFormatPreference == "12-hour") {
+                                                val p = startTime.split(":")
+                                                if (p.size == 2) {
+                                                    val h24 = p[0].toIntOrNull() ?: 0
+                                                    val amPm = if (h24 >= 12) "PM" else "AM"
+                                                    var h12 = h24 % 12
+                                                    if (h12 == 0) h12 = 12
+                                                    "$h12:${p[1]} $amPm"
+                                                } else startTime
+                                            } else startTime
+
+                                            val formattedEnd = if (timeFormatPreference == "12-hour") {
+                                                val p = endTime.split(":")
+                                                if (p.size == 2) {
+                                                    val h24 = p[0].toIntOrNull() ?: 0
+                                                    val amPm = if (h24 >= 12) "PM" else "AM"
+                                                    var h12 = h24 % 12
+                                                    if (h12 == 0) h12 = 12
+                                                    "$h12:${p[1]} $amPm"
+                                                } else endTime
+                                            } else endTime
+
                                             val schedName = activeSched?.appName ?: "Active Curfew"
                                             val todoStr = activeSched?.todoWhileLocked ?: "Engage in substitution screen-free routines."
 
@@ -842,7 +975,7 @@ fun HomeScreen(
                                             ) {
                                                 Column(modifier = Modifier.padding(10.dp)) {
                                                     Text(
-                                                        text = "⏰ Active Lockdown: $schedName ($startTime - $endTime)",
+                                                        text = stringResource(id = com.example.R.string.active_lockdown, schedName, formattedStart, formattedEnd),
                                                         style = MaterialTheme.typography.bodySmall,
                                                         fontWeight = FontWeight.Bold,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1050,7 +1183,7 @@ fun HomeScreen(
                                                 }
                                             }
                                             Text(
-                                                text = "${appRecord.usageMinutes} minutes tomorrow scrolling logs",
+                                                text = "${appRecord.usageMinutes} minutes logged",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -1097,33 +1230,8 @@ fun HomeScreen(
                         }
                     }
 
-                    // Stress test helper button card
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                "🧪 Habit Simulator Panel",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "Inject extra TikTok scroll times or delete apps to test limit triggers and panda mascot alerts instantly.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Button(
-                                onClick = { showAddUsageDialog = true },
-                                modifier = Modifier.fillMaxWidth().testTag("simulate_inject_button")
-                            ) {
-                                Text("Inject Scroll Time Minutes 🔌", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                    // Habit Simulator hidden from end users — dev tool only
+                    // (showAddUsageDialog state is still available via ViewModel for testing)
                 }
             }
             2 -> {
@@ -1458,7 +1566,7 @@ fun HomeScreen(
                         val soundList = listOf(
                             "Bamboo Chime 🎋" to 1,
                             "Zen Temple Gong 🔔" to 3,
-                            "Sleeping Panda Flute 🍃" to 5,
+                            "Sleeping Kitty Flute 🍃" to 5,
                             "Quiet Mountain Spring 🌊" to 7,
                             "Singing Bowl Chime 🍵" to 9
                         )
@@ -1806,7 +1914,7 @@ fun HomeScreen(
                         ) {
                             IconButton(
                                 onClick = {
-                                    if (alertFrequencyLevel > 1) alertFrequencyLevel -= 1f
+                                    if (alertFrequencyLevel > 1) viewModel.updateAlertFrequencyLevel(alertFrequencyLevel - 1f)
                                 },
                                 modifier = Modifier.size(28.dp)
                             ) {
@@ -1815,7 +1923,7 @@ fun HomeScreen(
 
                             Slider(
                                 value = alertFrequencyLevel,
-                                onValueChange = { alertFrequencyLevel = it },
+                                onValueChange = { viewModel.updateAlertFrequencyLevel(it) },
                                 valueRange = 1f..5f,
                                 steps = 3,
                                 modifier = Modifier.weight(1f),
@@ -1827,7 +1935,7 @@ fun HomeScreen(
 
                             IconButton(
                                 onClick = {
-                                    if (alertFrequencyLevel < 5) alertFrequencyLevel += 1f
+                                    if (alertFrequencyLevel < 5) viewModel.updateAlertFrequencyLevel(alertFrequencyLevel + 1f)
                                 },
                                 modifier = Modifier.size(28.dp)
                             ) {

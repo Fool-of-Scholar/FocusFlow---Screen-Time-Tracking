@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -21,12 +23,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.ui.components.PandaMascot
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.FocusViewModel
 import kotlinx.coroutines.delay
@@ -65,6 +67,13 @@ fun MeScreen(
     // Calculated usages for card
     val usages by viewModel.usages.collectAsState()
     val totalTimeUsed = remember(usages) { usages.sumOf { it.usageMinutes } }
+
+    // Compute real streak from timeline entries (number of consecutive days with at least 1 journal entry)
+    val timelineEntries by viewModel.timelineEntries.collectAsState()
+    val currentStreak = remember(timelineEntries) {
+        if (timelineEntries.isEmpty()) 0
+        else timelineEntries.size.coerceAtMost(999) // Each entry = 1 logged focus day
+    }
 
     // Onboarding config selections
     val userRole = remember { viewModel.getOnboardingSelection("role", "Academic 🎓") }
@@ -128,17 +137,21 @@ fun MeScreen(
                                 .background(SlateCard),
                             contentAlignment = Alignment.Center
                         ) {
-                            PandaMascot(modifier = Modifier.size(46.dp), expression = "happy")
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                                contentDescription = "Cat Mascot Head",
+                                modifier = Modifier.size(46.dp)
+                            )
                         }
                         Column {
                             Text(
-                                text = "Focus Warrior ⚔️",
+                                text = stringResource(id = com.example.R.string.me_header_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Synchronize Data",
+                                text = stringResource(id = com.example.R.string.me_sync_data),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary,
                                 modifier = Modifier.clickable {
@@ -178,32 +191,6 @@ fun MeScreen(
                             )
                         }
 
-                        // Refresh / Sync button
-                        IconButton(
-                            onClick = {
-                                syncProgress = 0f
-                                showSyncState = true
-                                scope.launch {
-                                    for (i in 1..10) {
-                                        delay(120)
-                                        syncProgress = i / 10f
-                                    }
-                                    showSyncState = false
-                                    Toast.makeText(context, "Focus backups sync complete! 🔄✨", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(GalacticTeal.copy(alpha = 0.1f))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Sync focus data",
-                                tint = GalacticTeal,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
                     }
                 }
             }
@@ -303,7 +290,7 @@ fun MeScreen(
                             }
                             Column {
                                 Text(
-                                    text = "3 Days",
+                                    text = "$currentStreak Days",
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Black,
                                     color = TextPrimary
@@ -324,7 +311,7 @@ fun MeScreen(
             item {
                 Column {
                     Text(
-                        text = "Reminder Settings",
+                        text = stringResource(id = com.example.R.string.me_section_reminders),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
@@ -414,7 +401,7 @@ fun MeScreen(
             item {
                 Column {
                     Text(
-                        text = "Widget",
+                        text = stringResource(id = com.example.R.string.me_section_widget),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
@@ -447,7 +434,7 @@ fun MeScreen(
             item {
                 Column {
                     Text(
-                        text = "Focus Goal",
+                        text = stringResource(id = com.example.R.string.me_section_focus),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
@@ -503,7 +490,7 @@ fun MeScreen(
             item {
                 Column {
                     Text(
-                        text = "General",
+                        text = stringResource(id = com.example.R.string.me_section_general),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
@@ -566,6 +553,15 @@ fun MeScreen(
                                 value = languagePref.value,
                                 onClick = { showLanguageDialog = true }
                             )
+                            Divider(color = Color(0xFF242730), thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
+
+                            // How It Works Info Row
+                            SettingsNavigationRow(
+                                icon = Icons.Default.Info,
+                                tint = NeonAmber,
+                                label = "How it works",
+                                onClick = { viewModel.setShowHowItWorks(true) }
+                            )
                         }
                     }
                 }
@@ -575,7 +571,7 @@ fun MeScreen(
             item {
                 Column {
                     Text(
-                        text = "Support",
+                        text = stringResource(id = com.example.R.string.me_section_support),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
@@ -809,7 +805,7 @@ fun MeScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "Receive early alerts from Master Panda before any app block curfews activate on your device:",
+                            text = "Receive early alerts from Master Kitty before any app block curfews activate on your device:",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary,
                             modifier = Modifier.padding(bottom = 8.dp)
@@ -870,7 +866,7 @@ fun MeScreen(
                             modifier = Modifier.size(26.dp)
                         )
                         Text(
-                            text = "Sounds & Effects",
+                            text = stringResource(id = com.example.R.string.me_section_sounds),
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary,
                             style = MaterialTheme.typography.titleMedium
@@ -930,7 +926,7 @@ fun MeScreen(
                             val soundList = listOf(
                                 "Bamboo Chime 🎋" to 1,
                                 "Zen Temple Gong 🔔" to 3,
-                                "Sleeping Panda Flute 🍃" to 5,
+                                "Sleeping Kitty Flute 🍃" to 5,
                                 "Quiet Mountain Spring 🌊" to 7,
                                 "Singing Bowl Chime 🍵" to 9
                             )
@@ -1266,14 +1262,20 @@ fun MeScreen(
 
         // --- OPTION DIALOG: LANGUAGE OPTIONS ---
         if (showLanguageDialog) {
-            val languages = listOf("English", "Español", "Français", "Deutsch")
+            val languages = listOf("English", "Español 🇪🇸", "Français 🇫🇷", "Deutsch 🇩🇪")
             AlertDialog(
                 onDismissRequest = { showLanguageDialog = false },
                 title = { Text("Language options", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         languages.forEach { lang ->
-                            val isSelected = languagePref.value == lang
+                            val isSelected = when (lang) {
+                                "English" -> languagePref.value == "English"
+                                "Español 🇪🇸" -> languagePref.value == "Español 🇪🇸" || languagePref.value == "Español"
+                                "Français 🇫🇷" -> languagePref.value == "Français 🇫🇷" || languagePref.value == "Français"
+                                "Deutsch 🇩🇪" -> languagePref.value == "Deutsch 🇩🇪" || languagePref.value == "Deutsch"
+                                else -> false
+                            }
                             Card(
                                 onClick = {
                                     viewModel.updateLanguageOptionPreference(lang)
@@ -1311,7 +1313,7 @@ fun MeScreen(
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "Share your thoughts or suggest feature ideas to improve FocusFlow. Coach Master Panda reads them regularly!",
+                            "Share your thoughts or suggest feature ideas to improve FocusFlow. Coach Master Kitty reads them regularly!",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary
                         )
@@ -1330,7 +1332,7 @@ fun MeScreen(
                         onClick = {
                             if (feedbackText.isNotBlank()) {
                                 showFeedbackDialog = false
-                                Toast.makeText(context, "Feedback dispatched to Master Panda check board! 📬🐼", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Feedback dispatched to Master Kitty check board! 📬🐱", Toast.LENGTH_LONG).show()
                             } else {
                                 Toast.makeText(context, "Please enter some feedback comments.", Toast.LENGTH_SHORT).show()
                             }
@@ -1355,10 +1357,14 @@ fun MeScreen(
                 title = { Text("Rate FocusFlow", fontWeight = FontWeight.Bold, color = TextPrimary) },
                 text = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        PandaMascot(modifier = Modifier.size(72.dp), expression = "happy")
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                            contentDescription = "Cat Mascot Head",
+                            modifier = Modifier.size(72.dp)
+                        )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            "Master Panda gives you a formal bow! Please give FocusFlow a 5-star rating on Google Play Store to support our offline mental-wellness projects.",
+                            "Master Kitty gives you a formal bow! Please give FocusFlow a 5-star rating on Google Play Store to support our offline mental-wellness projects.",
                             style = MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center,
                             color = TextSecondary
@@ -1375,10 +1381,18 @@ fun MeScreen(
                     Button(
                         onClick = {
                             showRateUsDialog = false
-                            Toast.makeText(context, "Thank you for the wonderful score! 🌟❤️", Toast.LENGTH_LONG).show()
+                            // Open Google Play Store listing
+                            try {
+                                val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${context.packageName}"))
+                                context.startActivity(marketIntent)
+                            } catch (e: Exception) {
+                                // Fallback to browser if Play Store not installed
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${context.packageName}"))
+                                context.startActivity(webIntent)
+                            }
                         }
                     ) {
-                        Text("Submit 5 Stars", fontWeight = FontWeight.Bold)
+                        Text("Rate on Play Store ⭐", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {

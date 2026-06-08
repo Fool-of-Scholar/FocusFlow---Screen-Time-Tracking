@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,7 +22,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.data.model.AppLockSchedule
-import com.example.ui.components.PandaMascot
 import com.example.ui.viewmodel.FocusViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -124,6 +124,58 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                         Icon(Icons.Default.Add, contentDescription = "Add locked timer bundle")
                         Text("New Schedule", fontWeight = FontWeight.Bold)
                     }
+                }
+            }
+        }
+
+        // MASCOT HEADER BANNER CARD (Net Worth Inspiration Layout)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
+                ) {
+                    // Content details on the right side of the mascot
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 95.dp, top = 14.dp, end = 14.dp, bottom = 14.dp)
+                    ) {
+                        Text(
+                            text = "ACTIVE SCHEDULER",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${schedules.filter { it.isLocked }.size} Active Curfews",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Distraction pipelines are automatically shielded during scheduled hours.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Mascot on the left (front view bg remove)
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_front_view),
+                        contentDescription = "Cat Mascot Front",
+                        modifier = Modifier
+                            .size(90.dp)
+                            .align(Alignment.CenterStart)
+                            .padding(start = 8.dp)
+                    )
                 }
             }
         }
@@ -284,7 +336,11 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        PandaMascot(modifier = Modifier.size(72.dp), expression = "sad")
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                            contentDescription = "Cat Mascot Head",
+                            modifier = Modifier.size(72.dp)
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             "No lock pipelines scheduled.",

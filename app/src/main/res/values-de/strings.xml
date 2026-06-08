@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FocusFlow</string>
+    <string name="tab_active_locks">Aktive Sperren 🔒</string>
+    <string name="tab_visualizer">Visualisierer 📊</string>
+    <string name="tab_classifier">Klassifikator 🏷️</string>
+    <string name="limit_target">Ziel-Limit</string>
+    <string name="next_lock">Nächste Sperre</string>
+    <string name="no_active_curfews">Keine aktiven Sperrzeiten</string>
+    <string name="spent_on_phone">heute am Telefon verbracht (%1$d Min.)</string>
+    <string name="home_streak">🔥 %1$d-Tage-Serie</string>
+    <string name="action_needed">Aktion erforderlich: Zugriffsblocker aktiv?</string>
+    <string name="me_header_title">Fokus-Krieger ⚔️</string>
+    <string name="me_sync_data">Daten Synchronisieren</string>
+    <string name="me_streak">Serie 🔥</string>
+    <string name="me_daily_goal">Tagesziel</string>
+    <string name="me_section_focus">Ziel &amp; Strategie 🎯</string>
+    <string name="me_section_reminders">Erinnerungen 🔔</string>
+    <string name="me_section_sounds">Töne &amp; Effekte 🎵</string>
+    <string name="me_section_widget">Widget 🧩</string>
+    <string name="me_section_general">Allgemein ⚙️</string>
+    <string name="me_section_support">Support 💌</string>
+    <string name="active_lockdown">⏰ Aktive Sperre: %1$s (%2$s - %3$s)</string>
+</resources>

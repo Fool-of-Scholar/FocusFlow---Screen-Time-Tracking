@@ -18,6 +18,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import android.media.MediaPlayer
+import kotlinx.coroutines.delay
+import android.os.Vibrator
+import android.os.VibrationEffect
+import android.app.AlarmManager
 
 class FocusViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -27,6 +32,15 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     // Onboarding tutorial state
     private val _showTutorial = MutableStateFlow(sharedPrefs.getBoolean("show_onboarding_tutorial_v5", true))
     val showTutorial: StateFlow<Boolean> = _showTutorial.asStateFlow()
+
+    private val _showHowItWorks = MutableStateFlow(false)
+    val showHowItWorks: StateFlow<Boolean> = _showHowItWorks.asStateFlow()
+
+    fun setShowHowItWorks(show: Boolean) {
+        _showHowItWorks.value = show
+    }
+
+
 
     // Daily screen budget minutes (default calculated from questionnaire: 150m)
     private val _dailyScreentimeGoalMinutes = MutableStateFlow(sharedPrefs.getInt("daily_screentime_goal_minutes_v5", 150))
@@ -85,6 +99,16 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         _reminderLeadTimeMinutes.value = minutes
         sharedPrefs.edit().putInt("reminder_lead_time_minutes_v5", minutes).apply()
         addNotificationLog("Config Updated ⚙️", "Reminder lead-time set to $minutes minutes before curfew locking.", "System")
+        scheduleAlarms()
+    }
+
+    // Alert frequency level (1-5 scale, persisted so dialog doesn't forget on reopen)
+    private val _alertFrequencyLevel = MutableStateFlow(sharedPrefs.getFloat("alert_frequency_level_v5", 3f))
+    val alertFrequencyLevel: StateFlow<Float> = _alertFrequencyLevel.asStateFlow()
+
+    fun updateAlertFrequencyLevel(level: Float) {
+        _alertFrequencyLevel.value = level
+        sharedPrefs.edit().putFloat("alert_frequency_level_v5", level).apply()
     }
 
     // Sounds & Effects settings
@@ -100,6 +124,54 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private val _vibrationEnabled = MutableStateFlow(sharedPrefs.getBoolean("sound_vibration_enabled_v5", true))
     val vibrationEnabled: StateFlow<Boolean> = _vibrationEnabled.asStateFlow()
 
+    private var mediaPlayer: MediaPlayer? = null
+
+    fun playAlertSound() {
+        if (!_soundEffectsOn.value) return
+        
+        val soundResId = when (_selectedSoundName.value) {
+            "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
+            "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
+            "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_panda_flute
+            "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
+            "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
+            else -> com.example.R.raw.zen_temple_gong
+        }
+
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(getApplication(), soundResId)
+            mediaPlayer?.setVolume(_soundVolume.value, _soundVolume.value)
+            
+            if (_vibrationEnabled.value) {
+                val vibrator = getApplication<Application>().getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(500)
+                }
+            }
+
+            mediaPlayer?.start()
+
+            viewModelScope.launch {
+                delay(_selectedSoundDuration.value * 1000L)
+                try {
+                    if (mediaPlayer?.isPlaying == true) {
+                        mediaPlayer?.stop()
+                    }
+                    mediaPlayer?.release()
+                    mediaPlayer = null
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun updateSelectedSound(name: String, duration: Int) {
         _selectedSoundName.value = name
         _selectedSoundDuration.value = duration
@@ -108,6 +180,92 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             .putInt("selected_sound_duration_v5", duration)
             .apply()
         addNotificationLog("Sound Profile Updated 🎵", "System focus alert profile is now configured to $name.", "Sound")
+        playAlertSound()
+    }
+
+    private fun scheduleAlarms() {
+        val alarmManager = getApplication<Application>().getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val context = getApplication<Application>()
+
+        val activeSchedules = schedules.value.filter { it.isLocked }
+        val leadTimeMinutes = _reminderLeadTimeMinutes.value
+
+        activeSchedules.forEach { schedule ->
+            try {
+                val calendar = java.util.Calendar.getInstance()
+                val currentHour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+                val currentMinute = calendar.get(java.util.Calendar.MINUTE)
+                val currentMinutes = currentHour * 60 + currentMinute
+                
+                val startParts = schedule.startTime.split(":")
+                val startHour = startParts[0].toIntOrNull() ?: 22
+                val startMinute = startParts.getOrNull(1)?.toIntOrNull() ?: 0
+                val startTotalMinutes = startHour * 60 + startMinute
+                
+                var minutesUntilStart = startTotalMinutes - currentMinutes
+                if (minutesUntilStart < 0) {
+                    minutesUntilStart += 24 * 60
+                }
+
+                val startIntent = Intent(context, com.example.service.ReminderReceiver::class.java).apply {
+                    putExtra("title", "Curfew Started 🛡️")
+                    putExtra("message", "Lockdown active for ${schedule.appName}. Put down your phone.")
+                    putExtra("playSound", true)
+                }
+                val startPendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    schedule.id * 100 + 1,
+                    startIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                if (minutesUntilStart > 0) {
+                    val triggerTime = System.currentTimeMillis() + (minutesUntilStart * 60 * 1000L)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        if (alarmManager.canScheduleExactAlarms()) {
+                            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, startPendingIntent)
+                        } else {
+                            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, startPendingIntent)
+                        }
+                    } else {
+                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, startPendingIntent)
+                    }
+                }
+
+                if (leadTimeMinutes > 0) {
+                    var minutesUntilLead = minutesUntilStart - leadTimeMinutes
+                    if (minutesUntilLead < 0 && minutesUntilStart > 0) {
+                        minutesUntilLead = 0
+                    }
+                    if (minutesUntilLead > 0 || (minutesUntilLead == 0 && minutesUntilStart > 0)) {
+                        val leadIntent = Intent(context, com.example.service.ReminderReceiver::class.java).apply {
+                            putExtra("title", "Upcoming Curfew ⏰")
+                            putExtra("message", "${schedule.appName} locks in $leadTimeMinutes minutes.")
+                            putExtra("playSound", false)
+                        }
+                        val leadPendingIntent = PendingIntent.getBroadcast(
+                            context,
+                            schedule.id * 100 + 2,
+                            leadIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        val triggerTime = System.currentTimeMillis() + (minutesUntilLead * 60 * 1000L)
+                        
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            if (alarmManager.canScheduleExactAlarms()) {
+                                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, leadPendingIntent)
+                            } else {
+                                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, leadPendingIntent)
+                            }
+                        } else {
+                            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, leadPendingIntent)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun updateSoundVolume(volume: Float) {
@@ -260,6 +418,13 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // Schedule background alarms whenever schedules change
+        viewModelScope.launch {
+            schedules.collect {
+                scheduleAlarms()
+            }
+        }
+
         // Pre-populate premium realistic notification logs
         val now = System.currentTimeMillis()
         _notificationLogs.value = listOf(
@@ -277,7 +442,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             ),
             NotificationLog(
                 title = "High Scrolling Screen Alert 📱",
-                message = "YouTube scrolling has reached 45 mins. Master Panda recommends a quick 1-minute breathing focus.",
+                message = "YouTube scrolling has reached 45 mins. Master Kitty recommends a quick 1-minute breathing focus.",
                 timestamp = now - (5 * 3600 * 1000), // 5h ago
                 category = "Dopamine"
             ),
@@ -406,6 +571,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         }
         _dailyScreentimeGoalMinutes.value = calculatedGoalMinutes
         _showTutorial.value = false
+        _showHowItWorks.value = true
 
         // Automatically setup a customized Bedtime / Curfew lockdown block based on sleepHour selection!
         val startHour = try {
@@ -567,7 +733,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             )
             addNotificationLog(
                 title = "Focus Reflection Logged 📝",
-                message = "Progress pulse rating ($stars stars) recorded successfully. Master Panda feedback: $feedback",
+                message = "Progress pulse rating ($stars stars) recorded successfully. Master Kitty feedback: $feedback",
                 category = "Streak"
             )
         }
@@ -579,7 +745,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             // 1. Insert user message in DB
             repository.insertChatMessage(MascotChatMessage(text = text, isUser = true))
 
-            // 2. Generate custom responsive chatbot suggestions from Mentor Master Panda!
+            // 2. Generate custom responsive chatbot suggestions from Mentor Master Kitty!
             val trimmed = text.trim().lowercase()
             val (answer, expr) = when {
                 trimmed.contains("lock") || trimmed.contains("block") -> {
@@ -591,8 +757,8 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 trimmed.contains("stress") || trimmed.contains("anxious") || trimmed.contains("hard") -> {
                     Pair("Breathe with me: Inhale for 4s, hold for 4s, exhale for 4s. Digital scroll storms try to capture dopamine loops. You are in command 🧘.", "sad")
                 }
-                trimmed.contains("hi") || trimmed.contains("hello") || trimmed.contains("panda") -> {
-                    Pair("Hello there! I'm Master Panda, your personal mental coaching companion. Let's conquer digital habits together today! How can I support you?", "happy")
+                trimmed.contains("hi") || trimmed.contains("hello") || trimmed.contains("panda") || trimmed.contains("kitty") || trimmed.contains("cat") -> {
+                    Pair("Hello there! I'm Master Kitty, your personal mental coaching companion. Let's conquer digital habits together today! How can I support you?", "happy")
                 }
                 else -> {
                     Pair("I hear you! Cultivating conscious attention takes systematic practice. Try setting up a curated deep study lock, or log your pulse score in our Today journal logs so we can design active progress metrics together!", "happy")
@@ -662,7 +828,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun presetDefaultChat() {
         repository.insertChatMessage(
             MascotChatMessage(
-                text = "Greetings! I'm Master Panda, your personal smart focus mentor. Tap here or ask me anything to coordinate lockdowns, mindfulness pauses, and habits!",
+                text = "Greetings! I'm Master Kitty, your personal smart focus mentor. Tap here or ask me anything to coordinate lockdowns, mindfulness pauses, and habits!",
                 isUser = false,
                 expression = "happy"
             )

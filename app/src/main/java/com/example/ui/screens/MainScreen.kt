@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,7 +21,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.ui.components.PandaMascot
 import com.example.ui.viewmodel.FocusViewModel
 
 @Composable
@@ -73,15 +74,17 @@ fun MainScreen(viewModel: FocusViewModel) {
             }
         },
         floatingActionButton = {
-            if (!showTutorial) {
-                ExtendedFloatingActionButton(
-                    modifier = Modifier.testTag("talk_to_panda_fab"),
-                    onClick = { showChatDialog = true },
-                    icon = { Icon(Icons.Default.Send, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary) },
-                    text = { Text("Talk to Panda", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold) },
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            }
+            // Talk to Kitty FAB is hidden — AI analysis feature planned for a future release.
+            // To re-enable, uncomment the block below:
+            // if (!showTutorial) {
+            //     ExtendedFloatingActionButton(
+            //         modifier = Modifier.testTag("talk_to_kitty_fab"),
+            //         onClick = { showChatDialog = true },
+            //         icon = { Icon(Icons.Default.Send, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary) },
+            //         text = { Text("Talk to Kitty", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold) },
+            //         containerColor = MaterialTheme.colorScheme.primary
+            //     )
+            // }
         }
     ) { innerPadding ->
         Box(
@@ -240,15 +243,16 @@ fun MainScreen(viewModel: FocusViewModel) {
                                     5 -> "sleepy"
                                     else -> "happy"
                                 }
-                                PandaMascot(
-                                    modifier = Modifier.size(72.dp),
-                                    expression = expression
+                                androidx.compose.foundation.Image(
+                                    painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                                    contentDescription = "Cat Mascot Head",
+                                    modifier = Modifier.size(72.dp)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     val tipText = when (tutorialStep) {
                                         0 -> "Welcome to FocusFlow! Let's tailor an achievable daily screen allowance to recover offline clarity."
                                         1 -> "Your active role lets us coordinate ideal lock ranges. Work demands deep bounds, and play calls for limits."
-                                        2 -> "Choose your largest digital pitfall so we can inject curfew lockdown routines right away!"
+                                        2 -> "Choose your biggest distraction. FocusFlow uses 'Visual Curfews' to actively block these apps and issue warnings if opened during your Deep Work or Sleep routines!"
                                         3 -> "A higher score signals we should take a step-down focus pattern rather than cold turkey."
                                         4 -> "Moving or engaging in screen-free hobbies cuts down compulsive scrolling loops."
                                         5 -> "Sleep locks guard your circadian rest states. 1 hour of pre-sleep off-time unlocks 45% better rest!"
@@ -289,7 +293,7 @@ fun MainScreen(viewModel: FocusViewModel) {
                                         )
                                         Spacer(modifier = Modifier.height(12.dp))
                                         Text(
-                                            text = "Ditch endless algorithmic scrolling loops, set automatic lock curfews, and reclaim sensory wellness.",
+                                            text = "Ditch endless algorithmic scrolling loops, set automatic lock curfews, and reclaim sensory wellness. Our active locks will instantly block access to Distraction apps during scheduled routines.",
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             textAlign = TextAlign.Center,
@@ -637,7 +641,7 @@ fun MainScreen(viewModel: FocusViewModel) {
         }
     }
 
-    // Floating Chat conversation modal dialogue with Master Panda
+    // Floating Chat conversation modal dialogue with Master Kitty
     if (showChatDialog) {
         val chatHistory by viewModel.chatMessages.collectAsState()
         var chatInputText by remember { mutableStateOf("") }
@@ -649,8 +653,12 @@ fun MainScreen(viewModel: FocusViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    PandaMascot(modifier = Modifier.size(48.dp), expression = "happy")
-                    Text("Coach Master Panda 🐼", fontWeight = FontWeight.Bold)
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                        contentDescription = "Cat Mascot Head",
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text("Coach Master Kitty 🐱", fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -711,6 +719,99 @@ fun MainScreen(viewModel: FocusViewModel) {
             dismissButton = {
                 TextButton(onClick = { viewModel.clearChatHistory() }) {
                     Text("Clear Log", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+    }
+
+    val showHowItWorks by viewModel.showHowItWorks.collectAsState()
+    if (showHowItWorks) {
+        AlertDialog(
+            onDismissRequest = { viewModel.setShowHowItWorks(false) },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                        contentDescription = "Cat Mascot Head",
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text("How it Works 💡", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "FocusFlow helps you regain digital clarity and master self-discipline with these core steps:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text("⏱️", style = MaterialTheme.typography.titleLarge)
+                        Column {
+                            Text("Daily Screen Budget", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            Text("We calculate and enforce an active daily screen time allowance customized to your daily role.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text("🛡️", style = MaterialTheme.typography.titleLarge)
+                        Column {
+                            Text("Curfew Lockdowns", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            Text("Use the 'Schedules' tab to set locked windows (e.g. bedtime). Distraction apps will be completely blocked to preserve focus.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text("🐱", style = MaterialTheme.typography.titleLarge)
+                        Column {
+                            Text("Coach Kitty", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            Text("Master Kitty checks your mental focus balance daily, logs streaking scores, and prompts offline exercises.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text("📱", style = MaterialTheme.typography.titleLarge)
+                        Column {
+                            Text("Homescreen Widget", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            Text("Add the widget to keep your live minutes goal progression or shift comparison clearly visible.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.setShowHowItWorks(false) },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("how_it_works_got_it")
+                ) {
+                    Text("Got it! 🚀", fontWeight = FontWeight.Bold)
                 }
             }
         )

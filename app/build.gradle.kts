@@ -81,4 +81,7 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    // Google Play In-App Review
+    implementation("com.google.android.play:review-ktx:2.0.1")
 }
