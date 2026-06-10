@@ -22,6 +22,9 @@ interface FocusDao {
     @Delete
     suspend fun deleteUsage(usage: AppUsage)
 
+    @Query("DELETE FROM app_usages WHERE id = :id")
+    suspend fun deleteUsageById(id: Int)
+
     @Query("DELETE FROM app_usages")
     suspend fun deleteAllUsages()
 
@@ -44,6 +47,9 @@ interface FocusDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTimelineEntry(entry: FocusTimelineEntry)
+
+    @Query("DELETE FROM timeline_entries WHERE id = :id")
+    suspend fun deleteTimelineEntryById(id: Int)
 
     // Chat history
     @Query("SELECT * FROM mascot_chat_messages ORDER BY timestamp ASC")

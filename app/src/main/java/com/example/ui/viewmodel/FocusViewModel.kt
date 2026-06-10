@@ -132,7 +132,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         val soundResId = when (_selectedSoundName.value) {
             "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
             "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
-            "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_panda_flute
+            "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_kitty_flute
             "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
             "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
             else -> com.example.R.raw.zen_temple_gong
@@ -210,6 +210,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 val startIntent = Intent(context, com.example.service.ReminderReceiver::class.java).apply {
                     putExtra("title", "Curfew Started 🛡️")
                     putExtra("message", "Lockdown active for ${schedule.appName}. Put down your phone.")
+                    putExtra("smsMessage", schedule.customAlertSms)
                     putExtra("playSound", true)
                 }
                 val startPendingIntent = PendingIntent.getBroadcast(
@@ -241,6 +242,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                         val leadIntent = Intent(context, com.example.service.ReminderReceiver::class.java).apply {
                             putExtra("title", "Upcoming Curfew ⏰")
                             putExtra("message", "${schedule.appName} locks in $leadTimeMinutes minutes.")
+                            putExtra("smsMessage", schedule.customAlertSms)
                             putExtra("playSound", false)
                         }
                         val leadPendingIntent = PendingIntent.getBroadcast(
@@ -393,15 +395,38 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 if (currentList.isEmpty()) {
                     presetDefaultUsages()
                 }
+                
+                // Clear existing dummy usages
+                currentList.forEach {
+                    if (it.appName == "TikTok" || it.appName == "Instagram" || it.appName == "Notion") {
+                        if (it.usageMinutes == 120 || it.usageMinutes == 90 || it.usageMinutes == 45) {
+                            repository.deleteUsageById(it.id)
+                        }
+                    }
+                }
             }
             schedules.first().let { currentScheds ->
                 if (currentScheds.isEmpty()) {
                     presetDefaultSchedules()
                 }
+                
+                // Clear existing dummy "TikTok" schedules from previous app versions
+                currentScheds.forEach {
+                    if (it.appName == "TikTok" && it.startTime == "21:00" && it.endTime == "23:00" && it.todoWhileLocked == "Physical reading & deep restorative sleep prep") {
+                        repository.deleteScheduleById(it.id)
+                    }
+                }
             }
             timelineEntries.first().let { currentTimeline ->
                 if (currentTimeline.isEmpty()) {
                     presetDefaultTimeline()
+                }
+                
+                // Clear existing dummy timeline entries
+                currentTimeline.forEach {
+                    if (it.journalText.contains("deep focus block") || it.journalText.contains("Mindful warning")) {
+                        repository.deleteTimelineEntry(it.id)
+                    }
                 }
             }
             chatMessages.first().let { currentHistory ->
@@ -458,7 +483,13 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     fun triggerAndroidNotification() {
         val context = getApplication<Application>()
         try {
-            val totalTime = usages.value.sumOf { it.usageMinutes }
+            val startOfDay = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val totalTime = usages.value.filter { it.timestamp >= startOfDay }.sumOf { it.usageMinutes }
             val goal = dailyScreentimeGoalMinutes.value
             val widgetOption = widgetDisplayOption.value
             val prevTime = previousScreentimeMinutes.value
@@ -496,18 +527,38 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val titleText = "FocusFlow Live Status ⏱️"
-            val textContent = if (widgetOption == "goal") {
-                val percent = if (goal > 0) (totalTime * 100) / goal else 100
-                "Spent: $totalTime mins ($percent% of daily $goal min goal)"
-            } else {
-                val diff = totalTime - prevTime
-                val diffText = if (diff < 0) "${-diff}m less than yesterday! 🎉" else "${diff}m more than yesterday. ⚠️"
-                "Spent today: $totalTime mins vs Yesterday average: $prevTime mins. ($diffText)"
+            val largeIcon = android.graphics.BitmapFactory.decodeResource(
+                context.resources,
+                com.example.R.drawable.cat_mascot_head_view
+            )
+
+            val calendar = java.util.Calendar.getInstance()
+            val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+            val percent = if (goal > 0) (totalTime * 100) / goal else 100
+
+            val titleText = when {
+                totalTime >= goal -> "Screentime Limit Exceeded! ⚠️"
+                percent >= 80 -> "Approaching Screen Limit! ⏳"
+                hour >= 21 -> "Sleep Curfew Impending! 🌙"
+                else -> "Coach Master Kitty 🐾"
+            }
+
+            val textContent = when {
+                totalTime >= goal -> "You used $totalTime mins ($percent% of daily budget). Close the scrolls, focus now!"
+                percent >= 80 -> "Spent: $totalTime mins ($percent% of daily $goal min budget). Guard your balance!"
+                hour >= 21 -> "It's late ($totalTime mins used). Protect your rest, stay offline!"
+                else -> if (widgetOption == "goal") {
+                    "Spent: $totalTime mins ($percent% of daily $goal min goal)"
+                } else {
+                    val diff = totalTime - prevTime
+                    val diffText = if (diff < 0) "${-diff}m less than yesterday! 🎉" else "${diff}m more than yesterday. ⚠️"
+                    "Spent today: $totalTime mins vs Yesterday average: $prevTime mins. ($diffText)"
+                }
             }
 
             val notification = NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+                .setLargeIcon(largeIcon)
                 .setContentTitle(titleText)
                 .setContentText(textContent)
                 .setOngoing(true)
@@ -778,51 +829,16 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
 
     // Presets
     private suspend fun presetDefaultUsages() {
-        val preset = listOf(
-            AppUsage(appName = "TikTok", usageMinutes = 110, category = "Distraction"),
-            AppUsage(appName = "YouTube", usageMinutes = 65, category = "Distraction"),
-            AppUsage(appName = "Android Studio", usageMinutes = 95, category = "Productive"),
-            AppUsage(appName = "Notion Docs", usageMinutes = 35, category = "Productive"),
-            AppUsage(appName = "Slack", usageMinutes = 20, category = "Productive")
-        )
-        for (u in preset) repository.insertUsage(u)
+        // No dummy data by default. 
+        // Actual installed apps will be logged by the system dynamically.
     }
 
     private suspend fun presetDefaultSchedules() {
-        val preset = listOf(
-            AppLockSchedule(
-                appName = "TikTok",
-                startTime = "21:00",
-                endTime = "23:00",
-                daysOfWeek = "Daily",
-                todoWhileLocked = "Physical reading & deep restorative sleep prep",
-                customAlertSms = "FocusFlow Alert: TikTok locked! Stay off early scrolling.",
-                isLocked = true
-            )
-        )
-        for (s in preset) repository.insertSchedule(s)
+        // No dummy data by default.
     }
 
     private suspend fun presetDefaultTimeline() {
-        val preset = listOf(
-            FocusTimelineEntry(
-                dateString = "June 3",
-                pulseScore = 4,
-                journalText = "I held a solid work rhythm in Kotlin today. Evaded high scrolling loops.",
-                feelingTags = "Productive, Calm",
-                coachFeedback = "Awesome progress! Restricting morning phone scrolls gave you a clean energy surge.",
-                timestamp = System.currentTimeMillis() - 86400000
-            ),
-            FocusTimelineEntry(
-                dateString = "June 2",
-                pulseScore = 2,
-                journalText = "Slit into a 2h afternoon video stream. Slept quite lately.",
-                feelingTags = "Anxious, Tired",
-                coachFeedback = "We learn from slips! Let's schedule a 30-min active lock limit on YouTube for tomorrow.",
-                timestamp = System.currentTimeMillis() - (86400000 * 2)
-            )
-        )
-        for (t in preset) repository.insertTimelineEntry(t)
+        // No dummy data by default.
     }
 
     private suspend fun presetDefaultChat() {

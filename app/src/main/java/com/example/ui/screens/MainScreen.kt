@@ -41,6 +41,7 @@ fun MainScreen(viewModel: FocusViewModel) {
     // App Navigation Pages
     var activePageIndex by remember { mutableIntStateOf(0) }
     var showChatDialog by remember { mutableStateOf(false) }
+    var showHowItWorksDialog by remember { mutableStateOf(false) }
 
     if (showSplash) {
         SplashScreen(onFinished = { showSplash = false })
@@ -196,6 +197,7 @@ fun MainScreen(viewModel: FocusViewModel) {
                                                 sleepTime = onboardingSleepTimeByHour,
                                                 calculatedGoalMinutes = onboardingAdjustedMinutes
                                             )
+                                            showHowItWorksDialog = true
                                         }
                                     ) {
                                         Text(
@@ -624,6 +626,7 @@ fun MainScreen(viewModel: FocusViewModel) {
                                             sleepTime = onboardingSleepTimeByHour,
                                             calculatedGoalMinutes = onboardingAdjustedMinutes
                                         )
+                                        showHowItWorksDialog = true
                                     },
                                     shape = RoundedCornerShape(28.dp)
                                 ) {
@@ -639,6 +642,10 @@ fun MainScreen(viewModel: FocusViewModel) {
                 }
             }
         }
+    }
+
+    if (showHowItWorksDialog) {
+        com.example.ui.components.HowItWorksDialog(onDismiss = { showHowItWorksDialog = false })
     }
 
     // Floating Chat conversation modal dialogue with Master Kitty

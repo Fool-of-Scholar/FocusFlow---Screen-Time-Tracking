@@ -77,6 +77,7 @@ fun HomeScreen(
     var customAppName by remember { mutableStateOf("") }
     var isNewAppProductive by remember { mutableStateOf(false) }
     var showPermissionGuideDialog by remember { mutableStateOf(!accessibilityGranted || !usageAccessGranted) }
+    var showMissingPermissionsDialog by remember { mutableStateOf(false) }
 
     var homeActiveTab by remember { mutableIntStateOf(0) } // 0 = Active Locks, 1 = Screen Time Breakdown, 2 = All App Manager
 
@@ -84,7 +85,15 @@ fun HomeScreen(
     var showAddUsageDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    val totalTime = remember(usages) { usages.sumOf { it.usageMinutes } }
+    val totalTime = remember(usages) {
+        val startOfDay = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        usages.filter { it.timestamp >= startOfDay }.sumOf { it.usageMinutes }
+    }
     val isOverLimit = remember(totalTime, dailyScreentimeGoalMinutes) { totalTime > dailyScreentimeGoalMinutes }
     val progressColor = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
 
@@ -776,12 +785,19 @@ fun HomeScreen(
                                     OutlinedButton(
                                         modifier = Modifier.weight(1f).testTag("system_settings_perms"),
                                         onClick = {
-                                            try {
-                                                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Opening accessibility settings...", Toast.LENGTH_SHORT).show()
-                                            }
+                                                try {
+                                                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                    context.startActivity(intent)
+                                                } catch (e: Exception) {
+                                                    try {
+                                                        val intent = Intent(Settings.ACTION_SETTINGS)
+                                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                        context.startActivity(intent)
+                                                    } catch (e2: Exception) {
+                                                        Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
                                         },
                                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onErrorContainer)
                                     ) {
@@ -902,7 +918,7 @@ fun HomeScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                AppLogoIcon(appName = app.appName, isProductive = false, modifier = Modifier.size(40.dp))
+                                                com.example.ui.components.AppIcon(appName = app.appName, isProductive = false, size = 44.dp)
                                                 Column {
                                                     Text(
                                                         text = app.appName.uppercase(),
@@ -1149,26 +1165,27 @@ fun HomeScreen(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                 )
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        // App Circular Icon with customizable brand logo fallback
-                                        AppLogoIcon(appName = appRecord.appName, isProductive = isProductive)
-
-                                        Column {
+                                        // Real app icon
+                                        com.example.ui.components.AppIcon(
+                                            appName = appRecord.appName,
+                                            isProductive = isProductive,
+                                            size = 44.dp
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = appRecord.appName,
+                                                fontWeight = FontWeight.Black,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Text(
-                                                    text = appRecord.appName,
-                                                    fontWeight = FontWeight.Black,
-                                                    style = MaterialTheme.typography.bodyLarge
-                                                )
                                                 Surface(
                                                     color = if (isProductive) Color(0xFF2EBD6B).copy(alpha = 0.15f) else Color(0xFFE53935).copy(alpha = 0.15f),
                                                     shape = RoundedCornerShape(6.dp)
@@ -1178,35 +1195,34 @@ fun HomeScreen(
                                                         style = MaterialTheme.typography.labelSmall,
                                                         fontWeight = FontWeight.Black,
                                                         color = if (isProductive) Color(0xFF2EBD6B) else Color(0xFFE53935),
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                     )
                                                 }
                                             }
                                             Text(
-                                                text = "${appRecord.usageMinutes} minutes logged",
+                                                text = "${appRecord.usageMinutes} min logged",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
 
-                                    // Touch target interactive lock toggle switcher
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text(
-                                                text = if (isLockedForThisApp) "Locked Down 🚫" 
-                                                       else if (!isProductive) "Armed 🛡️" 
-                                                       else "Allowed ✅",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Black,
-                                                color = if (isLockedForThisApp) Color(0xFFE53935) else if (!isProductive) Color(0xFFFF9100) else Color(0xFF2EBD6B)
-                                            )
-                                            Text(
-                                                text = "Distraction App",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.outline
-                                            )
-                                        }
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Bottom status + toggle row
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isLockedForThisApp) "Locked Down 🚫"
+                                                   else if (!isProductive) "Armed 🛡️"
+                                                   else "Allowed ✅",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Black,
+                                            color = if (isLockedForThisApp) Color(0xFFE53935) else if (!isProductive) Color(0xFFFF9100) else Color(0xFF2EBD6B)
+                                        )
                                         Switch(
                                             checked = !isProductive,
                                             onCheckedChange = { isDistraction ->
@@ -1217,9 +1233,9 @@ fun HomeScreen(
                                                     category = newCategory
                                                 )
                                                 if (isDistraction) {
-                                                    Toast.makeText(context, "🚫 ${appRecord.appName} configured as Distraction (automatically locks when curfew schedules are active)!", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, "🚫 ${appRecord.appName} set as Distraction!", Toast.LENGTH_LONG).show()
                                                 } else {
-                                                    Toast.makeText(context, "✅ ${appRecord.appName} configured as Productive.", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "✅ ${appRecord.appName} set as Productive.", Toast.LENGTH_SHORT).show()
                                                 }
                                             },
                                             modifier = Modifier.testTag("app_instant_block_switch_${appRecord.appName}")
@@ -1235,17 +1251,14 @@ fun HomeScreen(
                 }
             }
             2 -> {
-                // ALL APP CLASSIFIER PANEL FOR HABITS WITH FULL APP CATALOG & SEARCH
-                val deviceApps = remember {
-                    kotlin.runCatching {
-                        val pm = context.packageManager
-                        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN, null).apply {
-                            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-                        }
-                        pm.queryIntentActivities(intent, 0).map { info ->
-                            info.loadLabel(pm).toString()
-                        }.filter { it.isNotBlank() }.distinct()
-                    }.getOrDefault(emptyList())
+                // ALL APP CLASSIFIER PANEL - async load to prevent UI thread crash
+                var deviceApps by remember { mutableStateOf<List<com.example.ui.components.InstalledAppInfo>>(emptyList()) }
+                var isLoadingApps by remember { mutableStateOf(true) }
+
+                LaunchedEffect(Unit) {
+                    isLoadingApps = true
+                    deviceApps = com.example.ui.components.getInstalledApps(context)
+                    isLoadingApps = false
                 }
 
                 val mergedAllApps = remember(deviceApps) {
@@ -1253,25 +1266,33 @@ fun HomeScreen(
                         listOf(
                             "TikTok", "YouTube", "Instagram", "Facebook", "Twitter", "Slack",
                             "Notion", "WhatsApp", "Spotify", "Chrome", "Gmail", "Netflix", "Reddit"
-                        )
+                        ).map { com.example.ui.components.InstalledAppInfo(it, "", null) }
                     } else {
-                        (listOf("TikTok", "YouTube", "Instagram", "Facebook", "Twitter", "Slack", "Notion", "WhatsApp", "Spotify", "Netflix", "Reddit") + deviceApps)
-                            .distinct()
-                            .sortedBy { it.lowercase() }
+                        deviceApps
                     }
                 }
 
                 var classifierSearchQuery by remember { mutableStateOf("") }
-                
+
                 val filteredApps = remember(mergedAllApps, classifierSearchQuery) {
-                    if (classifierSearchQuery.isBlank()) {
-                        mergedAllApps
-                    } else {
-                        mergedAllApps.filter { it.contains(classifierSearchQuery, ignoreCase = true) }
-                    }
+                    if (classifierSearchQuery.isBlank()) mergedAllApps
+                    else mergedAllApps.filter { it.label.contains(classifierSearchQuery, ignoreCase = true) }
                 }
 
                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                    // Loading indicator while fetching apps
+                    if (isLoadingApps) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(modifier = Modifier.size(40.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Loading your apps...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                    } else {
                     // Purpose Card for classification
                     Card(
                         modifier = Modifier
@@ -1344,38 +1365,51 @@ fun HomeScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            filteredApps.forEach { appItem ->
+                            filteredApps.forEach { appInfo ->
+                                val appItem = appInfo.label
                                 val existingRecord = usages.firstOrNull { it.appName.equals(appItem, ignoreCase = true) }
-                                val currentCategory = existingRecord?.category // "Distraction", "Productive", or null
+                                val currentCategory = existingRecord?.category
 
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .testTag("app_manager_item_${appItem}"),
+                                    shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = if (currentCategory == "Distraction") Color(0xFFFFEBEE).copy(alpha = 0.25f)
-                                                         else if (currentCategory == "Productive") Color(0xFFE8F5E9).copy(alpha = 0.25f)
-                                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                        containerColor = when (currentCategory) {
+                                            "Distraction" -> Color(0xFFFFEBEE).copy(alpha = 0.25f)
+                                            "Productive" -> Color(0xFFE8F5E9).copy(alpha = 0.25f)
+                                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                        }
                                     )
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                    // Main Column layout (avoids horizontal overflow)
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        // Top Row: Icon + App name/status
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f),
+                                            modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
-                                            AppLogoIcon(appName = appItem, isProductive = currentCategory == "Productive")
-                                            Column {
-                                                Text(appItem, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                                            com.example.ui.components.AppIcon(
+                                                appName = appItem,
+                                                packageName = appInfo.packageName.ifBlank { null },
+                                                isProductive = currentCategory == "Productive",
+                                                size = 44.dp
+                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    appItem,
+                                                    fontWeight = FontWeight.Black,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                )
                                                 Text(
                                                     text = when (currentCategory) {
-                                                        "Distraction" -> "Distraction App ⚠️ (Blocked)"
-                                                        "Productive" -> "Productive App ✅ (Allowed)"
-                                                        else -> "Unclassified ⚪ (Active monitor)"
+                                                        "Distraction" -> "Distraction ⚠️"
+                                                        "Productive" -> "Productive ✅"
+                                                        else -> "Unclassified"
                                                     },
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = when (currentCategory) {
@@ -1388,61 +1422,66 @@ fun HomeScreen(
                                             }
                                         }
 
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        // Bottom Row: Action buttons + Block toggle
                                         val activeLockSchedule = schedules.firstOrNull { it.appName.equals(appItem, ignoreCase = true) }
                                         val isBlocked = activeLockSchedule?.isLocked == true
 
-                                        Column(
-                                            horizontalAlignment = Alignment.End,
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                // Distraction Button
+                                            // Category buttons
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 Button(
                                                     onClick = {
-                                                        viewModel.insertUsageRecord(
-                                                            appName = appItem,
-                                                            usageMinutes = existingRecord?.usageMinutes ?: 0,
-                                                            category = "Distraction"
-                                                        )
+                                                        if (existingRecord != null) {
+                                                            viewModel.updateUsageRecord(existingRecord.copy(category = "Distraction"))
+                                                        } else {
+                                                            viewModel.insertUsageRecord(
+                                                                appName = appItem,
+                                                                usageMinutes = 0,
+                                                                category = "Distraction"
+                                                            )
+                                                        }
                                                         Toast.makeText(context, "⚠️ $appItem set as Distraction!", Toast.LENGTH_SHORT).show()
                                                     },
                                                     colors = ButtonDefaults.buttonColors(
                                                         containerColor = if (currentCategory == "Distraction") Color(0xFFE53935) else MaterialTheme.colorScheme.surfaceVariant
                                                     ),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    modifier = Modifier.height(28.dp)
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    shape = RoundedCornerShape(8.dp)
                                                 ) {
                                                     Text(
-                                                        text = "Distraction ⚠️",
+                                                        text = "Distraction",
                                                         style = MaterialTheme.typography.labelSmall,
                                                         fontWeight = FontWeight.Bold,
                                                         color = if (currentCategory == "Distraction") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
                                                 }
-
-                                                // Productive Button
                                                 Button(
                                                     onClick = {
-                                                        viewModel.insertUsageRecord(
-                                                            appName = appItem,
-                                                            usageMinutes = existingRecord?.usageMinutes ?: 0,
-                                                            category = "Productive"
-                                                        )
+                                                        if (existingRecord != null) {
+                                                            viewModel.updateUsageRecord(existingRecord.copy(category = "Productive"))
+                                                        } else {
+                                                            viewModel.insertUsageRecord(
+                                                                appName = appItem,
+                                                                usageMinutes = 0,
+                                                                category = "Productive"
+                                                            )
+                                                        }
                                                         Toast.makeText(context, "✅ $appItem set as Productive!", Toast.LENGTH_SHORT).show()
                                                     },
                                                     colors = ButtonDefaults.buttonColors(
                                                         containerColor = if (currentCategory == "Productive") Color(0xFF2EBD6B) else MaterialTheme.colorScheme.surfaceVariant
                                                     ),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    modifier = Modifier.height(28.dp)
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    shape = RoundedCornerShape(8.dp)
                                                 ) {
                                                     Text(
-                                                        text = "Productive ✅",
+                                                        text = "Productive",
                                                         style = MaterialTheme.typography.labelSmall,
                                                         fontWeight = FontWeight.Bold,
                                                         color = if (currentCategory == "Productive") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1450,51 +1489,62 @@ fun HomeScreen(
                                                 }
                                             }
 
-                                            // Block App layout Switch (at the bottom of the buttons)
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = "Block App",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = if (isBlocked) Color(0xFFE53935) else MaterialTheme.colorScheme.outline,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Switch(
-                                                    checked = isBlocked,
-                                                    onCheckedChange = { active ->
-                                                        if (active) {
-                                                            viewModel.addLockSchedule(
-                                                                appName = appItem,
-                                                                startTime = "22:00",
-                                                                endTime = "07:00",
-                                                                days = "Daily",
-                                                                todo = "Wind down screen-free: offline paper book, light stretching, deep breaths.",
-                                                                smsMsg = "FocusFlow Block alert: $appItem curfew lock active!"
-                                                            )
-                                                            Toast.makeText(context, "🚫 App lock active for $appItem!", Toast.LENGTH_SHORT).show()
-                                                        } else {
-                                                            schedules.filter { it.appName.equals(appItem, ignoreCase = true) }.forEach {
-                                                                viewModel.deleteSchedule(it.id)
+                                            // Block toggle (Only for Distractions)
+                                            if (currentCategory == "Distraction") {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (isBlocked) "🔒" else "🔓",
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                    Switch(
+                                                        checked = isBlocked,
+                                                        onCheckedChange = { active ->
+                                                            if (active) {
+                                                                val hasOverlay = android.provider.Settings.canDrawOverlays(context)
+                                                                val enabledServices = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+                                                                val hasAccessibility = enabledServices?.contains(context.packageName) == true
+                                                                if (!hasOverlay || !hasAccessibility) {
+                                                                    val missing = if (!hasOverlay && !hasAccessibility) "Overlay & Accessibility" else if (!hasOverlay) "Overlay" else "Accessibility"
+                                                                    Toast.makeText(context, "Missing permissions: $missing!", Toast.LENGTH_LONG).show()
+                                                                    showMissingPermissionsDialog = true
+                                                                } else {
+                                                                    viewModel.addLockSchedule(
+                                                                        appName = appItem,
+                                                                        startTime = "00:00",
+                                                                        endTime = "24:00",
+                                                                        days = "Daily",
+                                                                        todo = "Take a deep breath and step away from the screen.",
+                                                                        smsMsg = "FocusFlow: $appItem has been manually locked.",
+                                                                        cooldownMinutes = 0,
+                                                                        usageThresholdMinutes = 0
+                                                                    )
+                                                                    Toast.makeText(context, "🚫 App lock active for $appItem!", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            } else {
+                                                                schedules.filter { it.appName.equals(appItem, ignoreCase = true) }.forEach {
+                                                                    viewModel.deleteSchedule(it.id)
+                                                                }
+                                                                Toast.makeText(context, "✅ App lock disabled for $appItem.", Toast.LENGTH_SHORT).show()
                                                             }
-                                                            Toast.makeText(context, "✅ App lock disabled for $appItem.", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    },
-                                                    modifier = Modifier.testTag("app_manager_block_switch_${appItem}")
-                                                )
+                                                        },
+                                                        modifier = Modifier.testTag("app_manager_block_switch_${appItem}")
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-            }
-        }
-    }
-
+                    } // end else not loading (items list)
+                } // end outer Column
+            } // end 2 ->
+        } // end when (homeActiveTab)
+    } // end LazyColumn
+    } // end Box
     // --- PREMIUM OVERLAY CARD: SOUNDS & EFFECTS CUSTOMIZER ---
     if (showSoundsEffectsSheet) {
         AlertDialog(
@@ -2168,6 +2218,43 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
+                            text = "HOMESCREEN WIDGET",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Pin the FocusFlow widget to your homescreen to easily track your daily progress and pulse score.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+                                    val myProvider = android.content.ComponentName(context, com.example.widget.FocusWidgetProvider::class.java)
+                                    if (appWidgetManager.isRequestPinAppWidgetSupported) {
+                                        appWidgetManager.requestPinAppWidget(myProvider, null, null)
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Pinning widgets is not supported on this launcher.", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    android.widget.Toast.makeText(context, "Widget pinning requires Android 8.0 or higher. You can manually add it from your launcher.", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth().testTag("settings_pin_widget_button")
+                        ) {
+                            Text("Pin Widget to Home Screen 📌", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
                             text = "ONBOARDING SURVEY RETAKE",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
@@ -2199,6 +2286,68 @@ fun HomeScreen(
                     modifier = Modifier.testTag("settings_confirm_button")
                 ) {
                     Text("Apply & Close", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (showMissingPermissionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showMissingPermissionsDialog = false },
+            title = { Text("Permissions Required ⚠️", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("To manually lock an application, FocusFlow needs the following permissions to actively block the screen:")
+                    
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:${context.packageName}")
+                                )
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e2: Exception) {
+                                    Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant 'Display Over Other Apps'")
+                    }
+                    
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e2: Exception) {
+                                    Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant Accessibility Service")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showMissingPermissionsDialog = false }) {
+                    Text("Done")
                 }
             }
         )
@@ -2248,6 +2397,27 @@ fun HomeScreen(
                                 text = "Go to 'Settings > Accessibility > FocusFlow' and activate the service. This allows FocusFlow to intercept high-scroll distraction screens and construct lock intervention shields during curfew schedules.",
                                 style = MaterialTheme.typography.bodySmall
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        try {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            context.startActivity(intent)
+                                        } catch (e2: Exception) {
+                                            Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Open Accessibility Settings", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
 
@@ -2267,6 +2437,49 @@ fun HomeScreen(
                                 text = "Accept when prompted by Android to enable device administrator permissions. This protects curfew locks from easy deletion and strengthens habit redirection triggers.",
                                 style = MaterialTheme.typography.bodySmall
                             )
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "3. Display Over Other Apps 📱",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Go to 'Settings > Apps > Special app access > Display over other apps' and allow FocusFlow. This is REQUIRED to forcefully pop up the lock screen overlay when you open a blocked app.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${context.packageName}")
+                                        )
+                                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        try {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            context.startActivity(intent)
+                                        } catch (e2: Exception) {
+                                            Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Open Overlay Settings", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }

@@ -135,8 +135,8 @@ fun HabitsCalendarScreen(viewModel: FocusViewModel) {
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         androidx.compose.foundation.Image(
-                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
-                            contentDescription = "Cat Mascot Head",
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_stretching_view),
+                            contentDescription = "Cat Mascot Stretching",
                             modifier = Modifier.size(72.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))

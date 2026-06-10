@@ -66,7 +66,15 @@ fun MeScreen(
 
     // Calculated usages for card
     val usages by viewModel.usages.collectAsState()
-    val totalTimeUsed = remember(usages) { usages.sumOf { it.usageMinutes } }
+    val totalTimeUsed = remember(usages) {
+        val startOfDay = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        usages.filter { it.timestamp >= startOfDay }.sumOf { it.usageMinutes }
+    }
 
     // Compute real streak from timeline entries (number of consecutive days with at least 1 journal entry)
     val timelineEntries by viewModel.timelineEntries.collectAsState()
@@ -84,6 +92,7 @@ fun MeScreen(
     var syncProgress by remember { mutableStateOf(0f) }
 
     var showPremiumDetails by remember { mutableStateOf(false) }
+    var showHowItWorks by remember { mutableStateOf(false) }
     var showGoalSliderDialog by remember { mutableStateOf(false) }
     var showReminderModeDialog by remember { mutableStateOf(false) }
     var showReminderLeadTimeDialog by remember { mutableStateOf(false) }
@@ -625,6 +634,29 @@ fun MeScreen(
                 }
             }
 
+            // HOW IT WORKS BUTTON
+            item {
+                Button(
+                    onClick = { showHowItWorks = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .height(56.dp)
+                        .testTag("me_how_it_works_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Icon(androidx.compose.material.icons.Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "How FocusFlow Works 🐾",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
             // 8. RERUN COACH SURVEY BUTTON
             item {
                 Button(
@@ -762,6 +794,12 @@ fun MeScreen(
                 title = { Text("Choose Alert Range", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val modeDescriptions = mapOf(
+                            "Standard Mode" to "Normal notifications at scheduled times.",
+                            "Adaptive Gentle Mode" to "Subtle nudges that learn your patterns.",
+                            "Aggressive Lock Alert" to "Intense warnings before locks activate.",
+                            "Silent Coach Tally" to "No pop-ups, just logs for review later."
+                        )
                         modes.forEach { mode ->
                             val isSelected = dailyRemindersMode.value == mode
                             Card(
@@ -782,7 +820,10 @@ fun MeScreen(
                                 ) {
                                     RadioButton(selected = isSelected, onClick = null)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(mode, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
+                                    Column {
+                                        Text(mode, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
+                                        Text(modeDescriptions[mode] ?: "", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                    }
                                 }
                             }
                         }

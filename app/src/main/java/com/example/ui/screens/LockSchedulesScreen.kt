@@ -477,18 +477,56 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                     }
 
                     item {
+                        val context = androidx.compose.ui.platform.LocalContext.current
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Start Time Picker
                             OutlinedTextField(
                                 value = startTimeField,
-                                onValueChange = { startTimeField = it },
+                                onValueChange = { },
                                 modifier = Modifier.weight(1f).testTag("add_startTime_textfield"),
-                                label = { Text("Start Time") }
+                                label = { Text("Start Time") },
+                                readOnly = true,
+                                trailingIcon = {
+                                    androidx.compose.material3.IconButton(onClick = {
+                                        val cal = java.util.Calendar.getInstance()
+                                        android.app.TimePickerDialog(
+                                            context,
+                                            { _, hourOfDay, minute ->
+                                                startTimeField = String.format("%02d:%02d", hourOfDay, minute)
+                                            },
+                                            cal.get(java.util.Calendar.HOUR_OF_DAY),
+                                            cal.get(java.util.Calendar.MINUTE),
+                                            true // 24-hour format
+                                        ).show()
+                                    }) {
+                                        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.DateRange, contentDescription = "Pick Start Time")
+                                    }
+                                }
                             )
+
+                            // End Time Picker
                             OutlinedTextField(
                                 value = endTimeField,
-                                onValueChange = { endTimeField = it },
+                                onValueChange = { },
                                 modifier = Modifier.weight(1f).testTag("add_endTime_textfield"),
-                                label = { Text("End Time") }
+                                label = { Text("End Time") },
+                                readOnly = true,
+                                trailingIcon = {
+                                    androidx.compose.material3.IconButton(onClick = {
+                                        val cal = java.util.Calendar.getInstance()
+                                        android.app.TimePickerDialog(
+                                            context,
+                                            { _, hourOfDay, minute ->
+                                                endTimeField = String.format("%02d:%02d", hourOfDay, minute)
+                                            },
+                                            cal.get(java.util.Calendar.HOUR_OF_DAY),
+                                            cal.get(java.util.Calendar.MINUTE),
+                                            true // 24-hour format
+                                        ).show()
+                                    }) {
+                                        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.DateRange, contentDescription = "Pick End Time")
+                                    }
+                                }
                             )
                         }
                     }
@@ -522,32 +560,7 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                         )
                     }
 
-                    item {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        Text(
-                            "⚙️ Cooldown Period Trigger (Usage Threshold)",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
 
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = thresholdField,
-                                onValueChange = { thresholdField = it },
-                                modifier = Modifier.weight(1f).testTag("add_threshold_textfield"),
-                                label = { Text("Scroll Limit (Minutes)") }
-                            )
-                            OutlinedTextField(
-                                value = cooldownField,
-                                onValueChange = { cooldownField = it },
-                                modifier = Modifier.weight(1f).testTag("add_cooldown_textfield"),
-                                label = { Text("Lock Duration (Minutes)") }
-                            )
-                        }
-                    }
                 }
             },
             confirmButton = {
@@ -567,8 +580,8 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                                     days = daysField,
                                     todo = todoField,
                                     smsMsg = smsAlertField,
-                                    cooldownMinutes = cooldownField.toIntOrNull() ?: 0,
-                                    usageThresholdMinutes = thresholdField.toIntOrNull() ?: 0
+                                    cooldownMinutes = 0,
+                                    usageThresholdMinutes = 0
                                 )
                                 showAddScheduleForm = false
                             }
@@ -588,8 +601,8 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                                     days = daysField,
                                     todo = todoField,
                                     smsMsg = smsAlertField,
-                                    cooldownMinutes = cooldownField.toIntOrNull() ?: 0,
-                                    usageThresholdMinutes = thresholdField.toIntOrNull() ?: 0
+                                    cooldownMinutes = 0,
+                                    usageThresholdMinutes = 0
                                 )
                                 showAddScheduleForm = false
                             }

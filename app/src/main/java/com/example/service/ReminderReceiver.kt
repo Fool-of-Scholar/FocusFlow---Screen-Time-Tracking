@@ -43,13 +43,41 @@ class ReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val largeIcon = android.graphics.BitmapFactory.decodeResource(
+            context.resources,
+            com.example.R.drawable.cat_mascot_head_view
+        )
+
+        val customView = android.widget.RemoteViews(context.packageName, com.example.R.layout.notification_custom)
+        customView.setTextViewText(com.example.R.id.notification_title, title)
+        customView.setTextViewText(com.example.R.id.notification_text, message)
+
         val notificationBuilder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle(title)
-            .setContentText(message)
+            .setCustomContentView(customView)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+
+        val smsMessage = intent.getStringExtra("smsMessage")
+        if (!smsMessage.isNullOrBlank()) {
+            val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
+                data = android.net.Uri.parse("smsto:")
+                putExtra("sms_body", smsMessage)
+            }
+            val smsPendingIntent = PendingIntent.getActivity(
+                context,
+                System.currentTimeMillis().toInt() + 10,
+                smsIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            notificationBuilder.addAction(
+                android.R.drawable.sym_action_email,
+                "SMS Buddy 💬",
+                smsPendingIntent
+            )
+        }
 
         notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
 
@@ -65,7 +93,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 val soundResId = when (soundName) {
                     "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
                     "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
-                    "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_panda_flute
+                    "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_kitty_flute
                     "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
                     "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
                     else -> com.example.R.raw.zen_temple_gong

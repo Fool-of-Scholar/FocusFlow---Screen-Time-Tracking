@@ -25,6 +25,10 @@ class FocusRepository(private val focusDao: FocusDao) {
         focusDao.deleteUsage(usage)
     }
 
+    suspend fun deleteUsageById(id: Int) {
+        focusDao.deleteUsageById(id)
+    }
+
     suspend fun deleteAllUsages() {
         focusDao.deleteAllUsages()
     }
@@ -43,6 +47,10 @@ class FocusRepository(private val focusDao: FocusDao) {
 
     suspend fun insertTimelineEntry(entry: FocusTimelineEntry) {
         focusDao.insertTimelineEntry(entry)
+    }
+
+    suspend fun deleteTimelineEntry(id: Int) {
+        focusDao.deleteTimelineEntryById(id)
     }
 
     suspend fun insertChatMessage(message: MascotChatMessage) {

@@ -68,21 +68,25 @@ fun DashboardScreen(viewModel: FocusViewModel) {
     var weekOffset by remember { mutableIntStateOf(0) }
     var monthOffset by remember { mutableIntStateOf(0) }
 
-    // Dialog state for add/edit records
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editingUsage by remember { mutableStateOf<AppUsage?>(null) }
-    var appNameInput by remember { mutableStateOf("") }
-    var usageMinutesInput by remember { mutableStateOf("") }
-    var categoryInput by remember { mutableStateOf("Distraction") } // "Distraction" or "Productive"
-
     // Date Helper Formatting structures (using remember to avoid memory allocations)
     val dayLabelFormatter = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
     val weekRangeFormatter = remember { SimpleDateFormat("MMM d", Locale.getDefault()) }
     val monthLabelFormatter = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
     val timeFormatter = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
+    // Filter data to only installed apps (to remove old dummy data)
+    var installedAppLabels by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            installedAppLabels = com.example.ui.components.getInstalledApps(context)
+                .map { it.label.lowercase() }
+                .toSet()
+        }
+    }
+
     // Filter data for the active screen tabs / offsets
     val filteredData = remember(usages, activeTab, dayOffset, weekOffset, monthOffset) {
+        val validUsages = usages
         val calendar = Calendar.getInstance()
         when (activeTab) {
             0 -> {
@@ -90,7 +94,7 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                 val targetCal = Calendar.getInstance().apply {
                     add(Calendar.DATE, -dayOffset)
                 }
-                usages.filter {
+                validUsages.filter {
                     val entryCal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
                     entryCal.get(Calendar.YEAR) == targetCal.get(Calendar.YEAR) &&
                     entryCal.get(Calendar.DAY_OF_YEAR) == targetCal.get(Calendar.DAY_OF_YEAR)
@@ -108,7 +112,7 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                 val endWeek = (startWeek.clone() as Calendar).apply {
                     add(Calendar.DATE, 7)
                 }
-                usages.filter {
+                validUsages.filter {
                     it.timestamp >= startWeek.timeInMillis && it.timestamp < endWeek.timeInMillis
                 }.sortedByDescending { it.timestamp }
             }
@@ -117,7 +121,7 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                 val targetMonth = Calendar.getInstance().apply {
                     add(Calendar.MONTH, -monthOffset)
                 }
-                usages.filter {
+                validUsages.filter {
                     val entryCal = Calendar.getInstance().apply { timeInMillis = it.timestamp }
                     entryCal.get(Calendar.YEAR) == targetMonth.get(Calendar.YEAR) &&
                     entryCal.get(Calendar.MONTH) == targetMonth.get(Calendar.MONTH)
@@ -337,7 +341,15 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                     .background(Color(0xFF0F111E))
                     .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
             ) {
-                val totalTime = remember(filteredData) { filteredData.sumOf { it.usageMinutes } }
+                val totalTime = remember(filteredData, activeTab) { 
+                    val rawTotal = filteredData.sumOf { it.usageMinutes }
+                    when (activeTab) {
+                        0 -> minOf(rawTotal, 24 * 60)
+                        1 -> minOf(rawTotal, 7 * 24 * 60)
+                        2 -> minOf(rawTotal, 31 * 24 * 60)
+                        else -> rawTotal
+                    }
+                }
                 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -444,11 +456,11 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                     verticalArrangement = Arrangement.Center
                 ) {
                     Image(
-                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
-                        contentDescription = "Cat Mascot Head",
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_sleeping_view),
+                        contentDescription = "Cat Mascot Sleeping",
                         modifier = Modifier.size(80.dp)
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Zero records logged for this period! ✅",
                         fontSize = 15.sp,
@@ -457,11 +469,11 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        text = "Tap the '+' icon above to add screen time usage logs",
+                        text = "App usage is automatically tracked and logged dynamically as you use your device.",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.outline,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 4.dp, start = 16.dp, end = 16.dp)
                     )
                 }
             }
@@ -484,10 +496,10 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         // App Icon logo display
-                        AppLogoIcon(
+                        com.example.ui.components.AppIcon(
                             appName = item.appName,
                             isProductive = (item.category == "Productive"),
-                            modifier = Modifier.size(48.dp)
+                            size = 48.dp
                         )
 
                         Column(modifier = Modifier.weight(1f)) {
@@ -526,245 +538,25 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                             )
                         }
 
-                        // Right side: usage numerical value & action items
+                        // Right side: usage numerical value
                         Column(
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "${item.usageMinutes}m",
+                                text = if (item.usageMinutes <= 1) "< 1m" else "${item.usageMinutes}m",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Black,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                IconButton(
-                                    onClick = {
-                                        // Edit
-                                        editingUsage = item
-                                        appNameInput = item.appName
-                                        usageMinutesInput = item.usageMinutes.toString()
-                                        categoryInput = item.category
-                                        showAddDialog = true
-                                    },
-                                    modifier = Modifier.size(28.dp).testTag("edit_record_${item.id}")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Edit record",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        // Delete
-                                        viewModel.deleteUsageRecord(item)
-                                        Toast.makeText(context, "Record removed", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(28.dp).testTag("delete_record_${item.id}")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete record",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
                         }
                     }
                 }
             }
         } // end else
     } // end LazyColumn
-
-        // Floating Action Button — always visible so users can add records even when list is non-empty
-        FloatingActionButton(
-            onClick = {
-                showAddDialog = true
-                editingUsage = null
-                appNameInput = ""
-                usageMinutesInput = ""
-                categoryInput = "Distraction"
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(24.dp)
-                .testTag("dashboard_add_fab"),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Log new app usage")
-        }
-    } // end Box
-    if (showAddDialog) {
-        val editing = editingUsage
-        
-        AlertDialog(
-            onDismissRequest = {
-                showAddDialog = false
-                editingUsage = null
-            },
-            title = {
-                Text(
-                    text = if (editing != null) "✏️ Edit Usage Log" else "➕ Log App Screen Usage",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "Enter the parameters below. When adding to a past period, we automatically synchronize the hourly schedule blocks perfectly.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-
-                    // App Selection / text input
-                    OutlinedTextField(
-                        value = appNameInput,
-                        onValueChange = { appNameInput = it },
-                        label = { Text("App Name / Activity") },
-                        modifier = Modifier.fillMaxWidth().testTag("dialog_app_input"),
-                        singleLine = true
-                    )
-
-                    // Common apps buttons to quickly populate
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val presets = listOf("TikTok", "YouTube", "Android Studio", "Notion Docs", "Slack")
-                        presets.forEach { name ->
-                            AssistChip(
-                                onClick = { 
-                                    appNameInput = name
-                                    categoryInput = if (name == "TikTok" || name == "YouTube") "Distraction" else "Productive"
-                                },
-                                label = { Text(name) }
-                            )
-                        }
-                    }
-
-                    // Duration Input
-                    OutlinedTextField(
-                        value = usageMinutesInput,
-                        onValueChange = { usageMinutesInput = it },
-                        label = { Text("Usage Minutes") },
-                        modifier = Modifier.fillMaxWidth().testTag("dialog_minutes_input"),
-                        singleLine = true
-                    )
-
-                    // Category Toggle
-                    Text(
-                        text = "Category classification",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Card(
-                            onClick = { categoryInput = "Distraction" },
-                            modifier = Modifier.weight(1f),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (categoryInput == "Distraction") MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface
-                            ),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (categoryInput == "Distraction") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
-                            )
-                        ) {
-                            Box(modifier = Modifier.padding(10.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text("👺 Distraction", fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        Card(
-                            onClick = { categoryInput = "Productive" },
-                            modifier = Modifier.weight(1f),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (categoryInput == "Productive") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                            ),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (categoryInput == "Productive") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                            )
-                        ) {
-                            Box(modifier = Modifier.padding(10.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text("💼 Productive", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val minutesValue = usageMinutesInput.toIntOrNull()
-                        if (appNameInput.isBlank()) {
-                            Toast.makeText(context, "Please enter app name!", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        if (minutesValue == null || minutesValue <= 0) {
-                            Toast.makeText(context, "Please enter valid minutes!", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-
-                        if (editing != null) {
-                            // Update
-                            viewModel.updateUsageRecord(
-                                editing.copy(
-                                    appName = appNameInput,
-                                    usageMinutes = minutesValue,
-                                    category = categoryInput
-                                )
-                            )
-                            Toast.makeText(context, "Log updated!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            // Insert log matching the navigation active ranges!
-                            val targetTimestamp = calculateTimestampForPeriod(
-                                tab = activeTab,
-                                dayOff = dayOffset,
-                                weekOff = weekOffset,
-                                monthOff = monthOffset
-                            )
-                            
-                            viewModel.insertUsageRecord(
-                                appName = appNameInput,
-                                usageMinutes = minutesValue,
-                                category = categoryInput,
-                                timestamp = targetTimestamp
-                            )
-                            Toast.makeText(context, "Log active loaded!", Toast.LENGTH_SHORT).show()
-                        }
-                        showAddDialog = false
-                        editingUsage = null
-                    },
-                    modifier = Modifier.testTag("dialog_confirm_button")
-                ) {
-                    Text("Apply & Save", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showAddDialog = false
-                        editingUsage = null
-                    }
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
+} // end Box
+} // end DashboardScreen
 
 // -------------------------------------------------------------
 // VISUAL ARTWORK CHARTS (OPTIMIZED FOR ZERO ALLOCATIONS DURING DRAW)

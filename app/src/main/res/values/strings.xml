@@ -21,4 +21,5 @@
     <string name="me_section_general">General ⚙️</string>
     <string name="me_section_support">Support 💌</string>
     <string name="active_lockdown">⏰ Active Lockdown: %1$s (%2$s - %3$s)</string>
+    <string name="accessibility_service_description">FocusFlow App Blocker detects when you open distracting apps and blocks them to help you stay focused.</string>
 </resources>
