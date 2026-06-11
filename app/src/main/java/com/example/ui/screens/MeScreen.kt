@@ -634,28 +634,7 @@ fun MeScreen(
                 }
             }
 
-            // HOW IT WORKS BUTTON
-            item {
-                Button(
-                    onClick = { showHowItWorks = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp)
-                        .height(56.dp)
-                        .testTag("me_how_it_works_button"),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    shape = RoundedCornerShape(28.dp)
-                ) {
-                    Icon(androidx.compose.material.icons.Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "How FocusFlow Works 🐾",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
+
 
             // 8. RERUN COACH SURVEY BUTTON
             item {
@@ -985,6 +964,19 @@ fun MeScreen(
                                                 .clickable {
                                                     viewModel.updateSelectedSound(soundPair.first, soundPair.second)
                                                     Toast.makeText(context, "Selected alert chime: ${soundPair.first}", Toast.LENGTH_SHORT).show()
+                                                    
+                                                    // Preview the sound
+                                                    val soundResId = when (soundPair.first) {
+                                                        "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
+                                                        "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
+                                                        "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_kitty_flute
+                                                        "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
+                                                        "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
+                                                        else -> com.example.R.raw.zen_temple_gong
+                                                    }
+                                                    try {
+                                                        com.example.ui.screens.SoundPreviewHelper.playPreview(context, soundResId, soundPair.second)
+                                                    } catch (e: Exception) {}
                                                 }
                                                 .padding(horizontal = 8.dp, vertical = 8.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,

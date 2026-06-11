@@ -44,21 +44,6 @@ fun DashboardScreen(viewModel: FocusViewModel) {
     val dailyScreentimeGoalMinutes by viewModel.dailyScreentimeGoalMinutes.collectAsState()
     val previousScreentimeMinutes by viewModel.previousScreentimeMinutes.collectAsState()
 
-    // Auto-log the FocusFlow app open session at first render (tracks when user opens the app)
-    // Records 1 minute for "FocusFlow" as a Productive session to reflect active engagement
-    var sessionStartMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    DisposableEffect(Unit) {
-        sessionStartMs = System.currentTimeMillis()
-        onDispose {
-            val sessionMinutes = ((System.currentTimeMillis() - sessionStartMs) / 60000L).toInt().coerceAtLeast(1)
-            viewModel.insertUsageRecord(
-                appName = "FocusFlow",
-                usageMinutes = sessionMinutes,
-                category = "Productive",
-                timestamp = sessionStartMs
-            )
-        }
-    }
 
     // Top Tabs: 0 -> DAY, 1 -> WEEK, 2 -> MONTH (All CAPS, matches the image exactly!)
     var activeTab by remember { mutableIntStateOf(0) }
@@ -86,7 +71,11 @@ fun DashboardScreen(viewModel: FocusViewModel) {
 
     // Filter data for the active screen tabs / offsets
     val filteredData = remember(usages, activeTab, dayOffset, weekOffset, monthOffset) {
-        val validUsages = usages
+        val knownSystemApps = listOf("smart panel", "zero screen", "app update", "app lock", "gboard", "digital wellbeing", "settings", "permission controller", "hios launcher", "launcher", "focusflow", "com.example")
+        val validUsages = usages.filter { usage ->
+            val nameLower = usage.appName.lowercase()
+            knownSystemApps.none { nameLower.contains(it) }
+        }
         val calendar = Calendar.getInstance()
         when (activeTab) {
             0 -> {

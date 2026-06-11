@@ -38,9 +38,6 @@ class AppBlockerService : AccessibilityService() {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val packageName = event.packageName?.toString() ?: return
             
-            // Ignore our own app and system UI
-            if (packageName == applicationContext.packageName || packageName.contains("systemui") || packageName == "com.example") return
-
             val pm = packageManager
             val appName = try {
                 val appInfo = pm.getApplicationInfo(packageName, 0)
@@ -48,34 +45,51 @@ class AppBlockerService : AccessibilityService() {
             } catch (e: Exception) {
                 packageName
             }
+            
+            val isFocusFlowOrSystem = packageName == applicationContext.packageName || 
+                packageName == "com.example" || 
+                packageName.contains("systemui", ignoreCase = true)
+
+            // Dynamic Fast Update logic:
+            val currentTime = System.currentTimeMillis()
+            
+            // If the user went back to FocusFlow or system UI, close the previous app's log instantly!
+            if (isFocusFlowOrSystem) {
+                if (currentForegroundApp != null) {
+                    val durationMs = currentTime - appStartTime
+                    val durationMinutes = if (durationMs > 2000) kotlin.math.max(1, kotlin.math.ceil(durationMs / 60000.0).toInt()) else 0
+                    if (durationMinutes > 0) {
+                        saveUsageToDatabase(currentForegroundApp!!, durationMinutes, currentTime)
+                    }
+                    currentForegroundApp = null
+                }
+                lastBlockedApp = null
+                return // Stop here, we don't log FocusFlow itself
+            }
+
+            // System App Tracker Filter (blacklist + launchable check)
+            val launchIntent = pm.getLaunchIntentForPackage(packageName)
+            val isLaunchable = launchIntent != null
+            val isLauncher = try {
+                val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply { addCategory(android.content.Intent.CATEGORY_HOME) }
+                val resolveInfo = pm.resolveActivity(homeIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                resolveInfo?.activityInfo?.packageName == packageName
+            } catch (e: Exception) { false }
+
+            val knownSystemApps = listOf("smart panel", "zero screen", "app update", "app lock", "gboard", "digital wellbeing", "settings", "permission controller", "hios launcher", "launcher")
+            val isKnownSystem = knownSystemApps.any { appName.lowercase().contains(it) }
+
+            if (!isLaunchable || isLauncher || isKnownSystem) {
+                lastBlockedApp = null
+                return // Skip logging this system layer
+            }
 
             // Real-Time Logging Logic
-            val currentTime = System.currentTimeMillis()
             if (currentForegroundApp != null && currentForegroundApp != appName) {
                 val durationMs = currentTime - appStartTime
                 val durationMinutes = if (durationMs > 2000) kotlin.math.max(1, kotlin.math.ceil(durationMs / 60000.0).toInt()) else 0
-                
                 if (durationMinutes > 0) {
-                    val appToLog = currentForegroundApp!!
-                    serviceScope.launch {
-                        val db = FocusDatabase.getDatabase(applicationContext)
-                        val existingUsages = db.focusDao().getAllUsagesFlow().firstOrNull() ?: emptyList()
-                        val existingRecord = existingUsages.firstOrNull { it.appName.equals(appToLog, ignoreCase = true) }
-                        
-                        if (existingRecord != null) {
-                            db.focusDao().updateUsage(existingRecord.copy(
-                                usageMinutes = existingRecord.usageMinutes + durationMinutes,
-                                timestamp = currentTime
-                            ))
-                        } else {
-                            db.focusDao().insertUsage(com.example.data.model.AppUsage(
-                                appName = appToLog,
-                                usageMinutes = durationMinutes,
-                                category = "Productive", // Default
-                                timestamp = currentTime
-                            ))
-                        }
-                    }
+                    saveUsageToDatabase(currentForegroundApp!!, durationMinutes, currentTime)
                 }
             }
 
@@ -90,11 +104,33 @@ class AppBlockerService : AccessibilityService() {
         }
     }
 
+    private fun saveUsageToDatabase(appToLog: String, durationMinutes: Int, currentTime: Long) {
+        serviceScope.launch {
+            val db = com.example.data.database.FocusDatabase.getDatabase(applicationContext)
+            val existingUsages = db.focusDao().getAllUsagesFlow().firstOrNull() ?: emptyList()
+            val existingRecord = existingUsages.firstOrNull { it.appName.equals(appToLog, ignoreCase = true) }
+            
+            if (existingRecord != null) {
+                db.focusDao().updateUsage(existingRecord.copy(
+                    usageMinutes = existingRecord.usageMinutes + durationMinutes,
+                    timestamp = currentTime
+                ))
+            } else {
+                db.focusDao().insertUsage(com.example.data.model.AppUsage(
+                    appName = appToLog,
+                    usageMinutes = durationMinutes,
+                    category = "Productive", // Default
+                    timestamp = currentTime
+                ))
+            }
+        }
+    }
+
     private fun checkIfAppIsBlocked(appName: String) {
         serviceScope.launch {
             try {
                 // Check if Master Unlock (Bypass) is active
-                val sharedPrefs = applicationContext.getSharedPreferences("FocusFlowPrefs", android.content.Context.MODE_PRIVATE)
+                val sharedPrefs = applicationContext.getSharedPreferences("focusflow_prefs_v5", android.content.Context.MODE_PRIVATE)
                 val lockBypassEnabled = sharedPrefs.getBoolean("lock_bypass_enabled_v5", false)
                 if (lockBypassEnabled) {
                     return@launch // Do not block if bypassed

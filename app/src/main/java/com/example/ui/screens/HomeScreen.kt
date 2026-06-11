@@ -1634,6 +1634,19 @@ fun HomeScreen(
                                             .clickable {
                                                 viewModel.updateSelectedSound(soundPair.first, soundPair.second)
                                                 Toast.makeText(context, "Selected alert chime: ${soundPair.first}", Toast.LENGTH_SHORT).show()
+                                                
+                                                // Preview the sound
+                                                val soundResId = when (soundPair.first) {
+                                                    "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
+                                                    "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
+                                                    "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_kitty_flute
+                                                    "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
+                                                    "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
+                                                    else -> com.example.R.raw.zen_temple_gong
+                                                }
+                                                try {
+                                                    com.example.ui.screens.SoundPreviewHelper.playPreview(context, soundResId, soundPair.second)
+                                                } catch (e: Exception) {}
                                             }
                                             .padding(horizontal = 8.dp, vertical = 8.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,

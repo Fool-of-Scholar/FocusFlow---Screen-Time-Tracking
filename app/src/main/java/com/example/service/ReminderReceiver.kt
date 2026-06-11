@@ -15,6 +15,7 @@ import com.example.MainActivity
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val pendingResult = goAsync()
         val title = intent.getStringExtra("title") ?: "FocusFlow Alert"
         val message = intent.getStringExtra("message") ?: "Time to focus!"
         val playSound = intent.getBooleanExtra("playSound", false)
@@ -122,14 +123,17 @@ class ReminderReceiver : BroadcastReceiver() {
                                 mediaPlayer.stop()
                             }
                             mediaPlayer?.release()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+                        } catch (e: Exception) {}
+                        pendingResult.finish()
                     }, duration * 1000L)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    pendingResult.finish()
                 }
+            } else {
+                pendingResult.finish()
             }
+        } else {
+            pendingResult.finish()
         }
     }
 }
