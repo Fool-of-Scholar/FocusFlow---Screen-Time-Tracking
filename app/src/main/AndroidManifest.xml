@@ -7,13 +7,13 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/true_app_logo"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/true_app_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.FocusFlow">
         
@@ -54,10 +54,21 @@
 
         <activity
             android:name="com.example.ui.screens.BlockOverlayActivity"
-            android:exported="false"
             android:theme="@style/Theme.FocusFlow"
-            android:noHistory="true"
-            android:excludeFromRecents="true" />
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=".LockOverlay"
+            android:exported="true" />
+            
+        <activity
+            android:name="com.example.ui.screens.ThemeSelectionActivity"
+            android:theme="@style/Theme.FocusFlow"
+            android:exported="false" />
+            
+        <activity
+            android:name="com.example.ui.screens.AnimationSelectionActivity"
+            android:theme="@style/Theme.FocusFlow"
+            android:exported="false" />
 
         <service
             android:name="com.example.service.AppBlockerService"

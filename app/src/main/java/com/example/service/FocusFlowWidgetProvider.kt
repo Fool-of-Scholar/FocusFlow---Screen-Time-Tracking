@@ -45,7 +45,7 @@ class FocusFlowWidgetProvider : AppWidgetProvider() {
                 },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            views.setOnClickPendingIntent(com.example.R.id.widget_main_title, pendingIntent)
+            views.setOnClickPendingIntent(com.example.R.id.widget_root, pendingIntent)
 
             if (option == "goal") {
                 views.setTextViewText(com.example.R.id.widget_mode_indicator, "GOAL PROGRESS 🎯")

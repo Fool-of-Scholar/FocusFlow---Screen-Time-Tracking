@@ -84,4 +84,8 @@ dependencies {
 
     // Google Play In-App Review
     implementation("com.google.android.play:review-ktx:2.0.1")
+
+    // Coil for Image & GIF loading
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("io.coil-kt:coil-gif:2.6.0")
 }

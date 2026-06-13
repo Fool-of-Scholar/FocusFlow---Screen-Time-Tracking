@@ -37,6 +37,17 @@ class FocusWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(com.example.R.id.widget_status, statusText)
             views.setTextViewText(com.example.R.id.widget_pulse, "Current Pulse Score: $currentPulse")
 
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context, 
+                0, 
+                intent, 
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(com.example.R.id.widget_root, pendingIntent)
+
             // Instruct the widget manager to update the widget
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }

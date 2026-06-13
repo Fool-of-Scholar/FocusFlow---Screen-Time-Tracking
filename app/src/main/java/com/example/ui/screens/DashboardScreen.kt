@@ -467,7 +467,14 @@ fun DashboardScreen(viewModel: FocusViewModel) {
                 }
             }
         } else {
-            items(filteredData, key = { it.id }) { item ->
+            val aggregatedData = filteredData.groupBy { it.appName.lowercase() }.map { (_, list) ->
+                list.first().copy(
+                    usageMinutes = list.sumOf { it.usageMinutes },
+                    timestamp = list.maxOf { it.timestamp }
+                )
+            }.sortedByDescending { it.usageMinutes }
+
+            items(aggregatedData, key = { it.appName }) { item ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()

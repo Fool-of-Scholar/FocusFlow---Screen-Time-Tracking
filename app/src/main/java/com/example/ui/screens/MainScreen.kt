@@ -25,7 +25,7 @@ import com.example.ui.viewmodel.FocusViewModel
 
 @Composable
 fun MainScreen(viewModel: FocusViewModel) {
-    var showSplash by remember { mutableStateOf(true) }
+    var showSplash by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
     val showTutorial by viewModel.showTutorial.collectAsState()
     var tutorialStep by remember { mutableIntStateOf(0) }
 

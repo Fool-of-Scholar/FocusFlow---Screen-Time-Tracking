@@ -50,9 +50,11 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private val _widgetDisplayOption = MutableStateFlow(sharedPrefs.getString("widget_display_option_v5", "goal") ?: "goal")
     val widgetDisplayOption: StateFlow<String> = _widgetDisplayOption.asStateFlow()
 
-    // Previous day screen time (default: 210 mins)
-    private val _previousScreentimeMinutes = MutableStateFlow(sharedPrefs.getInt("previous_screentime_minutes_v5", 210))
-    val previousScreentimeMinutes: StateFlow<Int> = _previousScreentimeMinutes.asStateFlow()
+    // Previous day screen time computed dynamically from DB
+    val previousScreentimeMinutes: StateFlow<Int>
+    
+    // Dynamic streak calculation from timeline entries
+    val currentStreak: StateFlow<Int>
 
     // Persistent Preferences from Me/Settings screenshots
     private val _accessibilityPermissionGranted = MutableStateFlow(sharedPrefs.getBoolean("accessibility_granted_v5", false))
@@ -192,26 +194,42 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
 
         activeSchedules.forEach { schedule ->
             try {
-                val calendar = java.util.Calendar.getInstance()
-                val currentHour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
-                val currentMinute = calendar.get(java.util.Calendar.MINUTE)
-                val currentMinutes = currentHour * 60 + currentMinute
-                
+                // Parse start time
                 val startParts = schedule.startTime.split(":")
                 val startHour = startParts[0].toIntOrNull() ?: 22
                 val startMinute = startParts.getOrNull(1)?.toIntOrNull() ?: 0
-                val startTotalMinutes = startHour * 60 + startMinute
+
+                // Parse end time to build subtitle
+                val endParts = schedule.endTime.split(":")
+                val endHour = endParts[0].toIntOrNull() ?: 23
+                val endMinute = endParts.getOrNull(1)?.toIntOrNull() ?: 0
                 
-                var minutesUntilStart = startTotalMinutes - currentMinutes
-                if (minutesUntilStart < 0) {
-                    minutesUntilStart += 24 * 60
+                // Helper to format AM/PM
+                fun formatAmPm(h: Int, m: Int): String {
+                    val ampm = if (h >= 12) "PM" else "AM"
+                    val hour12 = if (h % 12 == 0) 12 else h % 12
+                    return String.format("%d:%02d %s", hour12, m, ampm)
                 }
+                val subtitleText = "${formatAmPm(startHour, startMinute)} - ${formatAmPm(endHour, endMinute)}"
+                
+                // Setup Curfew Start Calendar
+                val startCal = java.util.Calendar.getInstance()
+                startCal.set(java.util.Calendar.HOUR_OF_DAY, startHour)
+                startCal.set(java.util.Calendar.MINUTE, startMinute)
+                startCal.set(java.util.Calendar.SECOND, 0)
+                startCal.set(java.util.Calendar.MILLISECOND, 0)
+                
+                // If the start time has already passed today, don't trigger it again today
+                val now = System.currentTimeMillis()
+                val isStartInFuture = startCal.timeInMillis > now
 
                 val startIntent = Intent(context, com.example.service.ReminderReceiver::class.java).apply {
-                    putExtra("title", "Curfew Started 🛡️")
-                    putExtra("message", "Lockdown active for ${schedule.appName}. Put down your phone.")
+                    putExtra("title", schedule.appName)
+                    putExtra("subtitle", subtitleText)
+                    putExtra("message", schedule.todoWhileLocked.ifBlank { "Time to focus!" })
                     putExtra("smsMessage", schedule.customAlertSms)
                     putExtra("playSound", true)
+                    putExtra("notificationId", schedule.id * 100 + 1)
                 }
                 val startPendingIntent = PendingIntent.getBroadcast(
                     context,
@@ -220,8 +238,8 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
-                if (minutesUntilStart > 0) {
-                    val triggerTime = System.currentTimeMillis() + (minutesUntilStart * 60 * 1000L)
+                if (isStartInFuture) {
+                    val triggerTime = startCal.timeInMillis
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                         if (alarmManager.canScheduleExactAlarms()) {
                             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, startPendingIntent)
@@ -234,16 +252,20 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 if (leadTimeMinutes > 0) {
-                    var minutesUntilLead = minutesUntilStart - leadTimeMinutes
-                    if (minutesUntilLead < 0 && minutesUntilStart > 0) {
-                        minutesUntilLead = 0
-                    }
-                    if (minutesUntilLead > 0 || (minutesUntilLead == 0 && minutesUntilStart > 0)) {
+                    val leadCal = java.util.Calendar.getInstance()
+                    leadCal.timeInMillis = startCal.timeInMillis
+                    leadCal.add(java.util.Calendar.MINUTE, -leadTimeMinutes)
+                    
+                    val isLeadInFuture = leadCal.timeInMillis > now
+
+                    if (isLeadInFuture && isStartInFuture) {
                         val leadIntent = Intent(context, com.example.service.ReminderReceiver::class.java).apply {
-                            putExtra("title", "Upcoming Curfew ⏰")
-                            putExtra("message", "${schedule.appName} locks in $leadTimeMinutes minutes.")
+                            putExtra("title", "${schedule.appName} (Upcoming)")
+                            putExtra("subtitle", subtitleText)
+                            putExtra("message", "Locks in $leadTimeMinutes minutes. ${schedule.todoWhileLocked}")
                             putExtra("smsMessage", schedule.customAlertSms)
                             putExtra("playSound", false)
+                            putExtra("notificationId", schedule.id * 100 + 2)
                         }
                         val leadPendingIntent = PendingIntent.getBroadcast(
                             context,
@@ -251,7 +273,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                             leadIntent,
                             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                         )
-                        val triggerTime = System.currentTimeMillis() + (minutesUntilLead * 60 * 1000L)
+                        val triggerTime = leadCal.timeInMillis
                         
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                             if (alarmManager.canScheduleExactAlarms()) {
@@ -389,6 +411,43 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         chatMessages = repository.allChatMessagesFlow
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+        previousScreentimeMinutes = usages.map { list ->
+            val yesterdayDateString = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(
+                java.util.Date(System.currentTimeMillis() - 86400000L)
+            )
+            list.filter { it.dateString == yesterdayDateString }.sumOf { it.usageMinutes }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+        currentStreak = timelineEntries.map { entries ->
+            if (entries.isEmpty()) return@map 0
+            
+            val dates = entries.map {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(it.timestamp))
+            }.distinct().sortedDescending()
+            
+            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+            val yesterdayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(System.currentTimeMillis() - 86400000L))
+            
+            if (dates.isEmpty() || (dates.first() != todayStr && dates.first() != yesterdayStr)) {
+                return@map 0
+            }
+            
+            var streak = 1
+            var currDateMs = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).parse(dates.first())?.time ?: return@map 0
+            
+            for (i in 1 until dates.size) {
+                val nextDateMs = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).parse(dates[i])?.time ?: continue
+                val diffDays = (currDateMs - nextDateMs) / 86400000L
+                if (diffDays == 1L) {
+                    streak++
+                    currDateMs = nextDateMs
+                } else {
+                    break
+                }
+            }
+            streak
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
         // Ingest natural baseline starting values if DB is freshly generated
         viewModelScope.launch {
             usages.first().let { currentList ->
@@ -494,8 +553,11 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             val widgetOption = widgetDisplayOption.value
             val prevTime = previousScreentimeMinutes.value
 
-            // Cache current screentime for widget to display instantly
-            sharedPrefs.edit().putInt("current_screentime_minutes_v5", totalTime).apply()
+            // Cache current and previous screentime for widget to display instantly
+            sharedPrefs.edit()
+                .putInt("current_screentime_minutes_v5", totalTime)
+                .putInt("previous_screentime_minutes_v5", prevTime)
+                .apply()
 
             // Broadcast update to homescreen widget
             val updateIntent = Intent(context, com.example.service.FocusFlowWidgetProvider::class.java).apply {
@@ -587,12 +649,8 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         addNotificationLog("Widget Display Configured 📱", "Display preference updated to show '$option' configuration.", "Widget")
     }
 
-    fun updatePreviousScreentime(minutes: Int) {
-        sharedPrefs.edit().putInt("previous_screentime_minutes_v5", minutes).apply()
-        _previousScreentimeMinutes.value = minutes
-        triggerAndroidNotification()
-        addNotificationLog("Baseline Sync Success 🔄", "Yesterday's reference screentime calibrated to $minutes minutes.", "System")
-    }
+    // fun updatePreviousScreentime(minutes: Int) removed because previousScreentimeMinutes is now dynamic
+
 
     fun setAppFilter(filter: String) {
         _appFilter.value = filter
@@ -714,6 +772,9 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleScheduleLock(schedule: AppLockSchedule) {
+        if (schedule.isLocked) { // About to be disabled
+            cancelAlarmsForSchedule(schedule.id)
+        }
         viewModelScope.launch {
             val updated = schedule.copy(isLocked = !schedule.isLocked)
             repository.insertSchedule(updated)
@@ -726,7 +787,41 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun cancelAlarmsForSchedule(scheduleId: Int) {
+        try {
+            val context = getApplication<Application>()
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+            val startIntent = Intent(context, com.example.service.ReminderReceiver::class.java)
+            val startPendingIntent = PendingIntent.getBroadcast(
+                context,
+                scheduleId * 100 + 1,
+                startIntent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (startPendingIntent != null) {
+                alarmManager.cancel(startPendingIntent)
+                startPendingIntent.cancel()
+            }
+
+            val leadIntent = Intent(context, com.example.service.ReminderReceiver::class.java)
+            val leadPendingIntent = PendingIntent.getBroadcast(
+                context,
+                scheduleId * 100 + 2,
+                leadIntent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (leadPendingIntent != null) {
+                alarmManager.cancel(leadPendingIntent)
+                leadPendingIntent.cancel()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun deleteSchedule(id: Int) {
+        cancelAlarmsForSchedule(id)
         viewModelScope.launch {
             repository.deleteScheduleById(id)
             addNotificationLog(

@@ -13,12 +13,46 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 
 class AppBlockerService : AccessibilityService() {
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private var lastBlockedApp: String? = null
+    
+    private var isScreenOn = true
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    isScreenOn = false
+                    // Screen turned off, stop tracking current app instantly
+                    if (currentForegroundApp != null) {
+                        val currentTime = System.currentTimeMillis()
+                        val durationMs = currentTime - appStartTime
+                        val durationMinutes = if (durationMs > 2000) kotlin.math.max(1, kotlin.math.ceil(durationMs / 60000.0).toInt()) else 0
+                        if (durationMinutes > 0) {
+                            saveUsageToDatabase(currentForegroundApp!!, durationMinutes, currentTime)
+                        }
+                        // We do NOT nullify currentForegroundApp, because we want it to resume if the screen turns back on to the same app.
+                        // We just update the start time to now so we don't double count.
+                        appStartTime = currentTime
+                    }
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    isScreenOn = true
+                    // Screen turned back on, resume tracking the foreground app
+                    if (currentForegroundApp != null) {
+                        appStartTime = System.currentTimeMillis()
+                    }
+                }
+            }
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -28,7 +62,21 @@ class AppBlockerService : AccessibilityService() {
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
         }
         serviceInfo = info
+        
+        // Register screen state receiver
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        registerReceiver(screenStateReceiver, filter)
+        
         Log.d("AppBlockerService", "Service Connected")
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(screenStateReceiver)
+        serviceJob.cancel()
     }
 
     private var currentForegroundApp: String? = null
@@ -88,7 +136,7 @@ class AppBlockerService : AccessibilityService() {
             if (currentForegroundApp != null && currentForegroundApp != appName) {
                 val durationMs = currentTime - appStartTime
                 val durationMinutes = if (durationMs > 2000) kotlin.math.max(1, kotlin.math.ceil(durationMs / 60000.0).toInt()) else 0
-                if (durationMinutes > 0) {
+                if (durationMinutes > 0 && isScreenOn) {
                     saveUsageToDatabase(currentForegroundApp!!, durationMinutes, currentTime)
                 }
             }
@@ -100,7 +148,7 @@ class AppBlockerService : AccessibilityService() {
             currentForegroundApp = appName
             appStartTime = currentTime
 
-            checkIfAppIsBlocked(appName)
+            checkIfAppIsBlocked(appName, packageName)
         }
     }
 
@@ -108,7 +156,8 @@ class AppBlockerService : AccessibilityService() {
         serviceScope.launch {
             val db = com.example.data.database.FocusDatabase.getDatabase(applicationContext)
             val existingUsages = db.focusDao().getAllUsagesFlow().firstOrNull() ?: emptyList()
-            val existingRecord = existingUsages.firstOrNull { it.appName.equals(appToLog, ignoreCase = true) }
+            val todayDateString = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(currentTime))
+            val existingRecord = existingUsages.firstOrNull { it.appName.equals(appToLog, ignoreCase = true) && it.dateString == todayDateString }
             
             if (existingRecord != null) {
                 db.focusDao().updateUsage(existingRecord.copy(
@@ -120,13 +169,14 @@ class AppBlockerService : AccessibilityService() {
                     appName = appToLog,
                     usageMinutes = durationMinutes,
                     category = "Productive", // Default
-                    timestamp = currentTime
+                    timestamp = currentTime,
+                    dateString = todayDateString
                 ))
             }
         }
     }
 
-    private fun checkIfAppIsBlocked(appName: String) {
+    private fun checkIfAppIsBlocked(appName: String, packageName: String) {
         serviceScope.launch {
             try {
                 // Check if Master Unlock (Bypass) is active
@@ -177,7 +227,7 @@ class AppBlockerService : AccessibilityService() {
                 }
 
                 if (shouldBlock) {
-                    showBlockOverlay(appName)
+                    showBlockOverlay(appName, packageName)
                 }
 
             } catch (e: Exception) {
@@ -186,13 +236,14 @@ class AppBlockerService : AccessibilityService() {
         }
     }
 
-    private fun showBlockOverlay(appName: String) {
+    private fun showBlockOverlay(appName: String, packageName: String) {
         if (appName == lastBlockedApp) return // Prevent infinite loop of launching overlay
         lastBlockedApp = appName
         
         Log.d("AppBlockerService", "Blocking app: $appName")
         val intent = Intent(this, BlockOverlayActivity::class.java).apply {
             putExtra("BLOCKED_APP_NAME", appName)
+            putExtra("BLOCKED_PACKAGE_NAME", packageName)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
         try {
@@ -231,8 +282,4 @@ class AppBlockerService : AccessibilityService() {
         // No-op
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        serviceJob.cancel()
-    }
 }

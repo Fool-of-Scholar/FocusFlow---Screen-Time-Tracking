@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1B223C"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:background="@drawable/true_app_logo"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#A0000000"
+        android:orientation="vertical"
+        android:padding="16dp">
 
     <TextView
         android:id="@+id/widget_title"
@@ -34,4 +41,5 @@
         android:textColor="#A0AABF"
         android:textSize="12sp" />
 
+    </LinearLayout>
 </LinearLayout>

@@ -11,7 +11,8 @@ data class AppUsage(
     val appName: String,
     val usageMinutes: Int,
     val category: String, // "Distraction" or "Productive"
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val dateString: String = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(timestamp))
 )
 
 @Entity(tableName = "lock_schedules")

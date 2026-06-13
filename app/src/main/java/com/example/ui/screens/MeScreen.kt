@@ -76,12 +76,9 @@ fun MeScreen(
         usages.filter { it.timestamp >= startOfDay }.sumOf { it.usageMinutes }
     }
 
-    // Compute real streak from timeline entries (number of consecutive days with at least 1 journal entry)
+    // Compute real streak from timeline entries
     val timelineEntries by viewModel.timelineEntries.collectAsState()
-    val currentStreak = remember(timelineEntries) {
-        if (timelineEntries.isEmpty()) 0
-        else timelineEntries.size.coerceAtMost(999) // Each entry = 1 logged focus day
-    }
+    val currentStreak by viewModel.currentStreak.collectAsState()
 
     // Onboarding config selections
     val userRole = remember { viewModel.getOnboardingSelection("role", "Academic 🎓") }
@@ -618,7 +615,14 @@ fun MeScreen(
                                 icon = Icons.Default.Lock,
                                 tint = CyberGreen,
                                 label = "Privacy Policy",
-                                onClick = { showPrivacyDialog = true }
+                                onClick = { 
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.google.com/document/d/18V4r9nbEnk9omURJgROacwowZ7BxAxsNi2rZs0BxY5o/edit?usp=sharing"))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        showPrivacyDialog = true
+                                    }
+                                }
                             )
                             Divider(color = Color(0xFF242730), thickness = 1.dp, modifier = Modifier.padding(horizontal = 14.dp))
 
@@ -1461,6 +1465,18 @@ fun MeScreen(
                 confirmButton = {
                     TextButton(onClick = { showPrivacyDialog = false }) {
                         Text("Accept Policy", fontWeight = FontWeight.Bold, color = GalacticTeal)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://docs.google.com/document/d/18V4r9nbEnk9omURJgROacwowZ7BxAxsNi2rZs0BxY5o/edit?usp=sharing"))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "No web browser installed.", Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Text("View Full Document", color = MaterialTheme.colorScheme.primary)
                     }
                 }
             )

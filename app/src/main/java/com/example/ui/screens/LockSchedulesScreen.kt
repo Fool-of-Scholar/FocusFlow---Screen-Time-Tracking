@@ -396,16 +396,30 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                                     checked = sched.isLocked,
                                     onCheckedChange = { viewModel.toggleScheduleLock(sched) }
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                IconButton(onClick = { viewModel.deleteSchedule(sched.id) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete restriction schedule", tint = MaterialTheme.colorScheme.error)
-                                }
                             }
                         }
 
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text("⏰ Range: ${sched.startTime}h to ${sched.endTime}h", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        Text("📆 Cadence: ${sched.daysOfWeek}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("⏰ Range: ${sched.startTime}h to ${sched.endTime}h", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                Text("📆 Cadence: ${sched.daysOfWeek}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            
+                            OutlinedButton(
+                                onClick = { viewModel.deleteSchedule(sched.id) },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete restriction schedule", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Delete")
+                            }
+                        }
 
                         if (sched.usageThresholdMinutes > 0) {
                             Spacer(modifier = Modifier.height(6.dp))
@@ -557,6 +571,12 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                             modifier = Modifier.fillMaxWidth().testTag("add_sms_textfield"),
                             label = { Text("Supportive substitute SMS notification") },
                             maxLines = 2
+                        )
+                        Text(
+                            text = "Standard carrier SMS rates apply if used.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                         )
                     }
 

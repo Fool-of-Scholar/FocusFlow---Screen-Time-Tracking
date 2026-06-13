@@ -17,9 +17,9 @@ class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pendingResult = goAsync()
         val title = intent.getStringExtra("title") ?: "FocusFlow Alert"
+        val subtitle = intent.getStringExtra("subtitle") ?: ""
         val message = intent.getStringExtra("message") ?: "Time to focus!"
-        val playSound = intent.getBooleanExtra("playSound", false)
-
+        val notificationId = intent.getIntExtra("notificationId", System.currentTimeMillis().toInt())
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "focusflow_reminders_v5"
 
@@ -51,6 +51,12 @@ class ReminderReceiver : BroadcastReceiver() {
 
         val customView = android.widget.RemoteViews(context.packageName, com.example.R.layout.notification_custom)
         customView.setTextViewText(com.example.R.id.notification_title, title)
+        if (subtitle.isNotBlank()) {
+            customView.setTextViewText(com.example.R.id.notification_subtitle, subtitle)
+            customView.setViewVisibility(com.example.R.id.notification_subtitle, android.view.View.VISIBLE)
+        } else {
+            customView.setViewVisibility(com.example.R.id.notification_subtitle, android.view.View.GONE)
+        }
         customView.setTextViewText(com.example.R.id.notification_text, message)
 
         val notificationBuilder = NotificationCompat.Builder(context, channelId)
@@ -80,56 +86,52 @@ class ReminderReceiver : BroadcastReceiver() {
             )
         }
 
-        notificationManager.notify(System.currentTimeMillis().toInt(), notificationBuilder.build())
+        notificationManager.notify(notificationId, notificationBuilder.build())
 
-        if (playSound) {
-            val sharedPrefs = context.getSharedPreferences("focusflow_prefs_v5", Context.MODE_PRIVATE)
-            val soundEffectsOn = sharedPrefs.getBoolean("sound_effects_on_v5", true)
-            if (soundEffectsOn) {
-                val soundName = sharedPrefs.getString("selected_sound_name_v5", "Zen Temple Gong 🔔")
-                val duration = sharedPrefs.getInt("selected_sound_duration_v5", 3)
-                val volume = sharedPrefs.getFloat("sound_volume_v5", 0.7f)
-                val vibrationEnabled = sharedPrefs.getBoolean("sound_vibration_enabled_v5", true)
+        val sharedPrefs = context.getSharedPreferences("focusflow_prefs_v5", Context.MODE_PRIVATE)
+        val soundEffectsOn = sharedPrefs.getBoolean("sound_effects_on_v5", true)
+        if (soundEffectsOn) {
+            val soundName = sharedPrefs.getString("selected_sound_name_v5", "Zen Temple Gong 🔔")
+            val duration = sharedPrefs.getInt("selected_sound_duration_v5", 3)
+            val volume = sharedPrefs.getFloat("sound_volume_v5", 0.7f)
+            val vibrationEnabled = sharedPrefs.getBoolean("sound_vibration_enabled_v5", true)
 
-                val soundResId = when (soundName) {
-                    "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
-                    "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
-                    "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_kitty_flute
-                    "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
-                    "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
-                    else -> com.example.R.raw.zen_temple_gong
-                }
+            val soundResId = when (soundName) {
+                "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
+                "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
+                "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_kitty_flute
+                "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
+                "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
+                else -> com.example.R.raw.zen_temple_gong
+            }
 
-                try {
-                    val mediaPlayer = MediaPlayer.create(context, soundResId)
-                    mediaPlayer?.setVolume(volume, volume)
-                    
-                    if (vibrationEnabled) {
-                        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-                        } else {
-                            @Suppress("DEPRECATION")
-                            vibrator.vibrate(500)
-                        }
+            try {
+                val mediaPlayer = MediaPlayer.create(context, soundResId)
+                mediaPlayer?.setVolume(volume, volume)
+                
+                if (vibrationEnabled) {
+                    val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(500)
                     }
-
-                    mediaPlayer?.start()
-                    
-                    // Stop after duration
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        try {
-                            if (mediaPlayer?.isPlaying == true) {
-                                mediaPlayer.stop()
-                            }
-                            mediaPlayer?.release()
-                        } catch (e: Exception) {}
-                        pendingResult.finish()
-                    }, duration * 1000L)
-                } catch (e: Exception) {
-                    pendingResult.finish()
                 }
-            } else {
+
+                mediaPlayer?.start()
+                
+                // Stop after duration
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        if (mediaPlayer?.isPlaying == true) {
+                            mediaPlayer.stop()
+                        }
+                        mediaPlayer?.release()
+                    } catch (e: Exception) {}
+                    pendingResult.finish()
+                }, duration * 1000L)
+            } catch (e: Exception) {
                 pendingResult.finish()
             }
         } else {

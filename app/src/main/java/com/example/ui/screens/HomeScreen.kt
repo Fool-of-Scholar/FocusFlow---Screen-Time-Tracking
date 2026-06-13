@@ -99,7 +99,7 @@ fun HomeScreen(
 
     // Streak from timeline entries (1 entry = 1 focus day)
     val timelineEntries by viewModel.timelineEntries.collectAsState()
-    val currentStreak = remember(timelineEntries) { timelineEntries.size.coerceAtMost(999) }
+    val currentStreak by viewModel.currentStreak.collectAsState()
 
     // Persisted alert frequency level
     val alertFrequencyLevel by viewModel.alertFrequencyLevel.collectAsState()
@@ -784,21 +784,7 @@ fun HomeScreen(
                                     
                                     OutlinedButton(
                                         modifier = Modifier.weight(1f).testTag("system_settings_perms"),
-                                        onClick = {
-                                                try {
-                                                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                    context.startActivity(intent)
-                                                } catch (e: Exception) {
-                                                    try {
-                                                        val intent = Intent(Settings.ACTION_SETTINGS)
-                                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                        context.startActivity(intent)
-                                                    } catch (e2: Exception) {
-                                                        Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
-                                                    }
-                                                }
-                                        },
+                                        onClick = { showPermissionGuideDialog = true },
                                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onErrorContainer)
                                     ) {
                                         Text("Open Settings ⚙️", style = MaterialTheme.typography.labelMedium)
@@ -1135,18 +1121,33 @@ fun HomeScreen(
                     // BREAKDOWN INTRO
                     Column {
                         Text(
-                            "App Usage Breakdown",
+                            "App Evaluation Breakdown",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "Toggle the locker switch to instantly block distracting apps.",
+                            "Compare your app usage between Today and Yesterday.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
                     }
 
-                    if (usages.isEmpty()) {
+                    val todayDateString = remember { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date()) }
+                    val yesterdayDateString = remember { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(System.currentTimeMillis() - 86400000L)) }
+                    
+                    val appBreakdown = remember(usages) {
+                        usages.groupBy { it.appName.lowercase() }.mapNotNull { (_, list) ->
+                            val appName = list.first().appName
+                            val category = list.first().category
+                            val todayMins = list.filter { it.dateString == todayDateString }.sumOf { it.usageMinutes }
+                            val yesterdayMins = list.filter { it.dateString == yesterdayDateString }.sumOf { it.usageMinutes }
+                            if (todayMins > 0 || yesterdayMins > 0) {
+                                Triple(appName, Pair(todayMins, yesterdayMins), category)
+                            } else null
+                        }.sortedByDescending { it.second.first }
+                    }
+
+                    if (appBreakdown.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxWidth().padding(32.dp),
                             contentAlignment = Alignment.Center
@@ -1154,13 +1155,13 @@ fun HomeScreen(
                             Text("No logged usage logs yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
                         }
                     } else {
-                        usages.forEach { appRecord ->
-                            val isProductive = appRecord.category == "Productive"
-                            val activeScheduleRunning = schedules.firstOrNull { it.isLocked && com.example.ui.viewmodel.isTimeInSchedule(it.startTime, it.endTime) }
-                            val isLockedForThisApp = !isProductive && activeScheduleRunning != null && !lockBypassEnabled
+                        appBreakdown.forEach { (appName, minsPair, category) ->
+                            val isProductive = category == "Productive"
+                            val todayMins = minsPair.first
+                            val yesterdayMins = minsPair.second
 
                             Card(
-                                modifier = Modifier.fillMaxWidth().testTag("visualizer_app_card_${appRecord.appName}"),
+                                modifier = Modifier.fillMaxWidth().testTag("visualizer_app_card_$appName"),
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                 )
@@ -1173,13 +1174,13 @@ fun HomeScreen(
                                     ) {
                                         // Real app icon
                                         com.example.ui.components.AppIcon(
-                                            appName = appRecord.appName,
+                                            appName = appName,
                                             isProductive = isProductive,
                                             size = 44.dp
                                         )
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = appRecord.appName,
+                                                text = appName,
                                                 fontWeight = FontWeight.Black,
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 maxLines = 1,
@@ -1199,47 +1200,22 @@ fun HomeScreen(
                                                     )
                                                 }
                                             }
+                                        }
+                                        
+                                        // Current vs Previous Stats right aligned
+                                        Column(horizontalAlignment = Alignment.End) {
                                             Text(
-                                                text = "${appRecord.usageMinutes} min logged",
+                                                text = "Today: ${todayMins}m",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "Prev: ${yesterdayMins}m",
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                color = MaterialTheme.colorScheme.outline
                                             )
                                         }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    // Bottom status + toggle row
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = if (isLockedForThisApp) "Locked Down 🚫"
-                                                   else if (!isProductive) "Armed 🛡️"
-                                                   else "Allowed ✅",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Black,
-                                            color = if (isLockedForThisApp) Color(0xFFE53935) else if (!isProductive) Color(0xFFFF9100) else Color(0xFF2EBD6B)
-                                        )
-                                        Switch(
-                                            checked = !isProductive,
-                                            onCheckedChange = { isDistraction ->
-                                                val newCategory = if (isDistraction) "Distraction" else "Productive"
-                                                viewModel.insertUsageRecord(
-                                                    appName = appRecord.appName,
-                                                    usageMinutes = appRecord.usageMinutes,
-                                                    category = newCategory
-                                                )
-                                                if (isDistraction) {
-                                                    Toast.makeText(context, "🚫 ${appRecord.appName} set as Distraction!", Toast.LENGTH_LONG).show()
-                                                } else {
-                                                    Toast.makeText(context, "✅ ${appRecord.appName} set as Productive.", Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            modifier = Modifier.testTag("app_instant_block_switch_${appRecord.appName}")
-                                        )
                                     }
                                 }
                             }
@@ -2210,21 +2186,7 @@ fun HomeScreen(
                             trailingIcon = { Text("min") }
                         )
 
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Yesterday average minutes field
-                        OutlinedTextField(
-                            value = tempPrevTime,
-                            onValueChange = { 
-                                tempPrevTime = it
-                                it.toIntOrNull()?.let { minutes ->
-                                    if (minutes in 0..480) viewModel.updatePreviousScreentime(minutes)
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("settings_yesterday_input"),
-                            label = { Text("Yesterday Screentime Baseline (minutes)") },
-                            trailingIcon = { Text("min") }
-                        )
+                        // Yesterday average minutes field removed because it is now dynamic
                     }
 
                     item {
@@ -2388,8 +2350,17 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "To securely lock distraction applications and maintain your streaks, Android OS requires two essential configurations:",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = "FocusFlow requires Accessibility Services to detect when a restricted app is launched so it can immediately display a focus lock screen overlay over distracting apps.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Text(
+                        text = "Privacy Guarantee: No personal data, screen content, or typing data is collected, transmitted, or shared by this service. Processing happens strictly locally on your device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -2407,7 +2378,7 @@ fun HomeScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Go to 'Settings > Accessibility > FocusFlow' and activate the service. This allows FocusFlow to intercept high-scroll distraction screens and construct lock intervention shields during curfew schedules.",
+                                text = "Go to 'Settings > Accessibility > FocusFlow' and activate the service. This allows FocusFlow to intercept restricted apps and construct lock intervention shields during curfew schedules.",
                                 style = MaterialTheme.typography.bodySmall
                             )
                             Spacer(modifier = Modifier.height(6.dp))
