@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FocusFlow</string>
+    <string name="tab_active_locks">Bloqueos 🔒</string>
+    <string name="tab_visualizer">Visualizador 📊</string>
+    <string name="tab_classifier">Clasificador 🏷️</string>
+    <string name="limit_target">Límite Objetivo</string>
+    <string name="next_lock">Próximo Bloqueo</string>
+    <string name="no_active_curfews">Sin toques de queda</string>
+    <string name="spent_on_phone">usado en el teléfono hoy (%1$d mins)</string>
+    <string name="home_streak">🔥 Racha de %1$d días</string>
+    <string name="action_needed">Acción requerida: ¿Bloqueadores activos?</string>
+    <string name="me_header_title">Guerrero de Enfoque ⚔️</string>
+    <string name="me_sync_data">Sincronizar Datos</string>
+    <string name="me_streak">Racha 🔥</string>
+    <string name="me_daily_goal">Meta Diaria</string>
+    <string name="me_section_focus">Meta y Estrategia 🎯</string>
+    <string name="me_section_reminders">Recordatorios 🔔</string>
+    <string name="me_section_sounds">Sonidos y Efectos 🎵</string>
+    <string name="me_section_widget">Widget 🧩</string>
+    <string name="me_section_general">General ⚙️</string>
+    <string name="me_section_support">Soporte 💌</string>
+    <string name="active_lockdown">⏰ Bloqueo Activo: %1$s (%2$s - %3$s)</string>
+</resources>

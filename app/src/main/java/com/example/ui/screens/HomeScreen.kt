@@ -1,0 +1,2276 @@
+package com.example.ui.screens
+
+import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import android.widget.Toast
+import android.provider.Settings
+import android.content.Intent
+import com.example.ui.viewmodel.FocusViewModel
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import com.example.service.FocusFlowWidgetProvider
+import android.os.Build
+import android.app.Activity
+import com.google.android.play.core.review.ReviewManagerFactory
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HomeScreen(
+    viewModel: FocusViewModel,
+    onNavigateToMe: () -> Unit
+) {
+    val usages by viewModel.usages.collectAsState()
+    val schedules by viewModel.schedules.collectAsState()
+    val dailyScreentimeGoalMinutes by viewModel.dailyScreentimeGoalMinutes.collectAsState()
+
+    val previousScreentimeMinutes by viewModel.previousScreentimeMinutes.collectAsState()
+
+    val accessibilityGranted by viewModel.accessibilityPermissionGranted.collectAsState()
+    val usageAccessGranted by viewModel.usageAccessPermissionGranted.collectAsState()
+    val soundEffectsOn by viewModel.soundEffectsOn.collectAsState()
+    val screentimeUnits by viewModel.screentimeUnits.collectAsState()
+    val timeFormatPreference by viewModel.timeFormatPreference.collectAsState()
+    val context = LocalContext.current
+
+    // Alert sound & notifications states
+    val selectedSoundName by viewModel.selectedSoundName.collectAsState()
+    val selectedSoundDuration by viewModel.selectedSoundDuration.collectAsState()
+    val soundVolume by viewModel.soundVolume.collectAsState()
+    val vibrationEnabled by viewModel.vibrationEnabled.collectAsState()
+    val notificationLogs by viewModel.notificationLogs.collectAsState()
+
+    var showNotificationLogsSheet by remember { mutableStateOf(false) }
+    var showSoundsEffectsSheet by remember { mutableStateOf(false) }
+    var logsTrackingEnabled by remember { mutableStateOf(true) }
+
+    var showLocksFaq by remember { mutableStateOf(false) }
+    var customAppName by remember { mutableStateOf("") }
+    var isNewAppProductive by remember { mutableStateOf(false) }
+    var showPermissionGuideDialog by remember { mutableStateOf(!accessibilityGranted || !usageAccessGranted) }
+    var showMissingPermissionsDialog by remember { mutableStateOf(false) }
+
+    var homeActiveTab by remember { mutableIntStateOf(0) } // 0 = Active Locks, 1 = Screen Time Breakdown, 2 = All App Manager
+
+    // Modal state for adding simulated test usage
+    var showAddUsageDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    val totalTime = remember(usages) {
+        val startOfDay = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        usages.filter { it.timestamp >= startOfDay }.sumOf { it.usageMinutes }
+    }
+    val isOverLimit = remember(totalTime, dailyScreentimeGoalMinutes) { totalTime > dailyScreentimeGoalMinutes }
+    val progressColor = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+
+    // Streak from timeline entries (1 entry = 1 focus day)
+    val timelineEntries by viewModel.timelineEntries.collectAsState()
+    val currentStreak by viewModel.currentStreak.collectAsState()
+
+    // Persisted alert frequency level
+    val alertFrequencyLevel by viewModel.alertFrequencyLevel.collectAsState()
+
+    val scrollState = rememberScrollState()
+
+    // GOOGLE PLAY IN-APP REVIEW TRIGGER (3-Day Streak)
+    val sharedPrefs = remember { context.getSharedPreferences("focusflow_prefs_v5", android.content.Context.MODE_PRIVATE) }
+    LaunchedEffect(currentStreak) {
+        if (currentStreak >= 3) {
+            val hasPrompted = sharedPrefs.getBoolean("has_prompted_review_v5", false)
+            if (!hasPrompted) {
+                try {
+                    val reviewManager = ReviewManagerFactory.create(context)
+                    val request = reviewManager.requestReviewFlow()
+                    request.addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            val reviewInfo = task.result
+                            val activity = context as? Activity
+                            if (activity != null) {
+                                val flow = reviewManager.launchReviewFlow(activity, reviewInfo)
+                                flow.addOnCompleteListener { _ ->
+                                    sharedPrefs.edit().putBoolean("has_prompted_review_v5", true).apply()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp)
+            .verticalScroll(scrollState)
+    ) {
+        // TOP BANNER (Streak indicator + round controls)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left: STREAK CAPSULE / PILL
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = com.example.R.string.home_streak, currentStreak),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Right: ROUND CONTROLS (Notification & Audio Speaker)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Bell alert button (Opens Notification Logs)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable {
+                            showNotificationLogsSheet = true
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Trigger alert notification",
+                        tint = if (logsTrackingEnabled && notificationLogs.isNotEmpty()) Color(0xFF2196F3) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Audio Speaker Toggle (Opens Sounds & Effects Customizer Card)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable {
+                            showSoundsEffectsSheet = true
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (soundEffectsOn) Icons.Default.PlayArrow else Icons.Default.Lock,
+                        contentDescription = "Toggle sound effects",
+                        tint = if (soundEffectsOn) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        // BIG CENTRED DISPLAY: Screentime today (Format: 1.9 HR)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            val isMinsOnly = screentimeUnits == "Mins Only"
+            val displayValue = if (isMinsOnly) {
+                totalTime.toString()
+            } else {
+                String.format(java.util.Locale.US, "%.1f", totalTime / 60.0)
+            }
+            val displayUnit = if (isMinsOnly) "MINS" else "HRS"
+            
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = displayValue,
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 68.sp),
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = displayUnit,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+            Text(
+                text = stringResource(id = com.example.R.string.spent_on_phone, totalTime),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+
+        // HORIZONTAL SIDE-BY-SIDE SUMMARY CARDS (TARGET & NEXT LOCK)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Left Card: Daily screentime target (Limit)
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(82.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Blue vertical status bar accent
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFF2196F3))
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = stringResource(id = com.example.R.string.limit_target),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Goal",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { showSettingsDialog = true }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val percent = if (dailyScreentimeGoalMinutes > 0) (totalTime * 100) / dailyScreentimeGoalMinutes else 0
+                        Text(
+                            text = "${dailyScreentimeGoalMinutes}m ($percent%)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            // Right Card: Next Schedule / Lockdown Countdown
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(82.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Orange vertical status bar accent
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFFFF9800))
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = stringResource(id = com.example.R.string.next_lock),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        
+                        // Dynamically look up next schedule curfew
+                        val nextSched = schedules.firstOrNull { it.isLocked }
+                        val nextLockText = if (nextSched != null) {
+                            val timeStr = nextSched.startTime
+                            val formattedTime = if (timeFormatPreference == "12-hour") {
+                                val parts = timeStr.split(":")
+                                if (parts.size == 2) {
+                                    val h24 = parts[0].toIntOrNull() ?: 0
+                                    val m = parts[1]
+                                    val amPm = if (h24 >= 12) "PM" else "AM"
+                                    var h12 = h24 % 12
+                                    if (h12 == 0) h12 = 12
+                                    "$h12:$m $amPm"
+                                } else timeStr
+                            } else timeStr
+                            "${nextSched.appName}: $formattedTime"
+                        } else {
+                            stringResource(id = com.example.R.string.no_active_curfews)
+                        }
+                        Text(
+                            text = nextLockText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        // TABS CHIPS CHANGER
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val tabs = listOf(
+                stringResource(id = com.example.R.string.tab_active_locks),
+                stringResource(id = com.example.R.string.tab_visualizer),
+                stringResource(id = com.example.R.string.tab_classifier)
+            )
+            tabs.forEachIndexed { index, title ->
+                val isSelected = homeActiveTab == index
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .clickable { homeActiveTab = index }
+                        .padding(vertical = 10.dp)
+                        .testTag("home_segment_tab_$index"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // VIEW RENDERING SWITCHER
+        when (homeActiveTab) {
+            0 -> {
+                // ACTIVE LOCKS VIEW WITH FAQS, PERMISSION CHANNELS & CURFEWS
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // FAQ expandable card for explanation
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .testTag("lock_faq_card"),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showLocksFaq = !showLocksFaq },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                    Text(
+                                        text = "How Do App Locks Work? & Purpose",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (showLocksFaq) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (showLocksFaq) "Collapse" else "Expand"
+                                )
+                            }
+                            
+                            AnimatedVisibility(visible = showLocksFaq) {
+                                Column(modifier = Modifier.padding(top = 10.dp)) {
+                                    Text(
+                                        text = "🎯 Purpose of App Locks:",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "• Disrupt Dopamine Loops: Introduce friction (locks) to prevent subconscious tap habits on high-scroll applications (social/media).\n" +
+                                               "• Constructive Redirection: Instead of leaving you empty, locks redirect you to a preset bedtime list of wholesome off-screen exercises (like reading paper books or stretches).",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    Text(
+                                        text = "⚙️ How It Works on Android:",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "• Localized Screen Shield: By listening to background window changes via Accessibility APIs, FocusFlow instantly creates secure overlays on locked apps during designated curfew hours.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // ⚠️ SYSTEM ACCESSIBILITY & USAGE STATUS
+                    if (!accessibilityGranted || !usageAccessGranted) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                                .clickable { showPermissionGuideDialog = true }
+                                .testTag("permissions_warning_card"),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Warning, contentDescription = "Alert", tint = MaterialTheme.colorScheme.error)
+                                    Text(
+                                        text = stringResource(id = com.example.R.string.action_needed),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "To securely lock distracting apps and log screen time, Android OS requires dynamic settings permissions to overlay interventions.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        modifier = Modifier.weight(1f).testTag("sim_grant_perms"),
+                                        onClick = {
+                                            viewModel.setAccessibilityPermissionGranted(true)
+                                            viewModel.setUsageAccessPermissionGranted(true)
+                                            Toast.makeText(context, "✨ Permissions Auto-Granted (Simulation Approved)!", Toast.LENGTH_LONG).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Text("Auto-Grant ✨", fontWeight = FontWeight.Bold)
+                                    }
+                                    
+                                    OutlinedButton(
+                                        modifier = Modifier.weight(1f).testTag("system_settings_perms"),
+                                        onClick = { showPermissionGuideDialog = true },
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onErrorContainer)
+                                    ) {
+                                        Text("Open Settings ⚙️", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Permissions successfully connected badge
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFE8F5E9)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Color(0xFF2EBD6B))
+                                Text(
+                                    text = "FocusFlow Locker Service Running (Simulated OS Settings Active)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1B5E20)
+                                )
+                            }
+                        }
+                    }
+
+                    // RESTRICTIONS HEADER
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Active Lock Curation 🛡️",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    val distractionApps = remember(usages) { usages.filter { it.category == "Distraction" } }
+
+                    if (distractionApps.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(24.dp)
+                            ) {
+                                androidx.compose.foundation.Image(
+                                    painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.cat_mascot_head_view),
+                                    contentDescription = "Cat Mascot Head",
+                                    modifier = Modifier.size(90.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No distracting apps flagged yet!",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Head to the 'Classifier' section to categorize focus-blocking apps so we can deploy shields.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = { homeActiveTab = 2 },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Go to Classifier 🏷️", fontWeight = FontWeight.Black)
+                                }
+                            }
+                        }
+                    } else {
+                        val lockBypassEnabled by viewModel.lockBypassEnabled.collectAsState()
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                        ) {
+                            distractionApps.forEach { app ->
+                                val activeScheduleRunning = schedules.firstOrNull { it.isLocked && com.example.ui.viewmodel.isTimeInSchedule(it.startTime, it.endTime) }
+                                val isLocked = activeScheduleRunning != null && !lockBypassEnabled
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("distraction_lock_card_${app.appName}"),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isLocked) MaterialTheme.colorScheme.surfaceVariant
+                                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                    ),
+                                    border = BorderStroke(1.dp, if (isLocked) Color(0xFFEF5350).copy(alpha = 0.4f) else Color.Transparent)
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                com.example.ui.components.AppIcon(appName = app.appName, isProductive = false, size = 44.dp)
+                                                Column {
+                                                    Text(
+                                                        text = app.appName.uppercase(),
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        fontWeight = FontWeight.Black
+                                                    )
+                                                    Text(
+                                                        text = if (isLocked) "🚫 STRICTLY LOCKED DOWN" 
+                                                               else if (lockBypassEnabled && activeScheduleRunning != null) "🔓 TEMPORARILY BYPASSED (Active in Me)" 
+                                                               else "🟢 SHIELD ARMED (Passive monitoring)",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isLocked) Color(0xFFEF5350) else if (lockBypassEnabled && activeScheduleRunning != null) Color(0xFFFF9100) else Color(0xFF2EBD6B)
+                                                    )
+                                                }
+                                            }
+                                            
+                                            // Status badge — shows live lock/shield state
+                                            Surface(
+                                                color = if (isLocked) Color(0xFFEF5350).copy(alpha = 0.15f)
+                                                        else Color(0xFF2EBD6B).copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(20.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isLocked) "🚫 Locked" else "🛡️ Armed",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = if (isLocked) Color(0xFFEF5350) else Color(0xFF2EBD6B),
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        
+                                        if (isLocked) {
+                                            val activeSched = activeScheduleRunning
+                                            val startTime = activeSched?.startTime ?: "22:00"
+                                            val endTime = activeSched?.endTime ?: "07:00"
+
+                                            val formattedStart = if (timeFormatPreference == "12-hour") {
+                                                val p = startTime.split(":")
+                                                if (p.size == 2) {
+                                                    val h24 = p[0].toIntOrNull() ?: 0
+                                                    val amPm = if (h24 >= 12) "PM" else "AM"
+                                                    var h12 = h24 % 12
+                                                    if (h12 == 0) h12 = 12
+                                                    "$h12:${p[1]} $amPm"
+                                                } else startTime
+                                            } else startTime
+
+                                            val formattedEnd = if (timeFormatPreference == "12-hour") {
+                                                val p = endTime.split(":")
+                                                if (p.size == 2) {
+                                                    val h24 = p[0].toIntOrNull() ?: 0
+                                                    val amPm = if (h24 >= 12) "PM" else "AM"
+                                                    var h12 = h24 % 12
+                                                    if (h12 == 0) h12 = 12
+                                                    "$h12:${p[1]} $amPm"
+                                                } else endTime
+                                            } else endTime
+
+                                            val schedName = activeSched?.appName ?: "Active Curfew"
+                                            val todoStr = activeSched?.todoWhileLocked ?: "Engage in substitution screen-free routines."
+
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(modifier = Modifier.padding(10.dp)) {
+                                                    Text(
+                                                        text = stringResource(id = com.example.R.string.active_lockdown, schedName, formattedStart, formattedEnd),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        text = "💡 Substitution Task:\n$todoStr",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                        } else if (lockBypassEnabled && activeScheduleRunning != null) {
+                                            Surface(
+                                                color = Color(0xFFFFECEB),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    text = "⚠️ You have turned on the 'Master Unlock Switch' in your profile settings. Take care of your deep focus goals!",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color(0xFFD32F2F),
+                                                    modifier = Modifier.padding(10.dp),
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        } else {
+                                            Text(
+                                                text = "🟢 This distraction app is armed. It will lock down automatically during any of your active curfew schedules and stay locked until the routines finish.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            1 -> {
+                // SCREEN TIME BREAKDOWN VISUALIZER VIEW + INDIVIDUAL BLOCK Toggles
+                val totalUsed = usages.sumOf { it.usageMinutes }
+                val productiveTotal = usages.filter { it.category == "Productive" }.sumOf { it.usageMinutes }
+                val distractingTotal = usages.filter { it.category == "Distraction" }.sumOf { it.usageMinutes }
+                val lockBypassEnabled by viewModel.lockBypassEnabled.collectAsState()
+                
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "DIGITAL RATIO CIRCLE",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Circular visual ring meter drawing
+                            Box(
+                                modifier = Modifier.size(160.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Canvas(modifier = Modifier.size(140.dp)) {
+                                    val strokeWidth = 14.dp.toPx()
+                                    val ratioDistract = if (totalUsed > 0) distractingTotal.toFloat() / totalUsed else 0f
+                                    val angleDistract = ratioDistract * 360f
+
+                                    // Inactive gray track
+                                    drawCircle(
+                                        color = Color(0xFF2C3240),
+                                        style = Stroke(width = strokeWidth)
+                                    )
+
+                                    // Productive Sweep (Cyber green)
+                                    drawArc(
+                                        color = Color(0xFF2EBD6B),
+                                        startAngle = -90f,
+                                        sweepAngle = 360f - angleDistract,
+                                        useCenter = false,
+                                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                    )
+
+                                    // Distracting Sweep (Crimson red)
+                                    drawArc(
+                                        color = Color(0xFFE53935),
+                                        startAngle = -90f + (360f - angleDistract),
+                                        sweepAngle = angleDistract,
+                                        useCenter = false,
+                                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                    )
+                                }
+
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "$totalUsed",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                    Text(
+                                        text = "mins logged",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Legend indicators
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(Color(0xFF2EBD6B)))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Productive: ${productiveTotal}m", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(Color(0xFFE53935)))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Distracting: ${distractingTotal}m", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // BREAKDOWN INTRO
+                    Column {
+                        Text(
+                            "App Evaluation Breakdown",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Compare your app usage between Today and Yesterday.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+
+                    val todayDateString = remember { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date()) }
+                    val yesterdayDateString = remember { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(System.currentTimeMillis() - 86400000L)) }
+                    
+                    val appBreakdown = remember(usages) {
+                        usages.groupBy { it.appName.lowercase() }.mapNotNull { (_, list) ->
+                            val appName = list.first().appName
+                            val category = list.first().category
+                            val todayMins = list.filter { it.dateString == todayDateString }.sumOf { it.usageMinutes }
+                            val yesterdayMins = list.filter { it.dateString == yesterdayDateString }.sumOf { it.usageMinutes }
+                            if (todayMins > 0 || yesterdayMins > 0) {
+                                Triple(appName, Pair(todayMins, yesterdayMins), category)
+                            } else null
+                        }.sortedByDescending { it.second.first }
+                    }
+
+                    if (appBreakdown.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No logged usage logs yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                        }
+                    } else {
+                        appBreakdown.forEach { (appName, minsPair, category) ->
+                            val isProductive = category == "Productive"
+                            val todayMins = minsPair.first
+                            val yesterdayMins = minsPair.second
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth().testTag("visualizer_app_card_$appName"),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        // Real app icon
+                                        com.example.ui.components.AppIcon(
+                                            appName = appName,
+                                            isProductive = isProductive,
+                                            size = 44.dp
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = appName,
+                                                fontWeight = FontWeight.Black,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Surface(
+                                                    color = if (isProductive) Color(0xFF2EBD6B).copy(alpha = 0.15f) else Color(0xFFE53935).copy(alpha = 0.15f),
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (isProductive) "Productive" else "Distraction",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Black,
+                                                        color = if (isProductive) Color(0xFF2EBD6B) else Color(0xFFE53935),
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Current vs Previous Stats right aligned
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = "Today: ${todayMins}m",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "Prev: ${yesterdayMins}m",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Habit Simulator hidden from end users — dev tool only
+                    // (showAddUsageDialog state is still available via ViewModel for testing)
+                }
+            }
+            2 -> {
+                // ALL APP CLASSIFIER PANEL - async load to prevent UI thread crash
+                var deviceApps by remember { mutableStateOf<List<com.example.ui.components.InstalledAppInfo>>(emptyList()) }
+                var isLoadingApps by remember { mutableStateOf(true) }
+
+                LaunchedEffect(Unit) {
+                    isLoadingApps = true
+                    deviceApps = com.example.ui.components.getInstalledApps(context)
+                    isLoadingApps = false
+                }
+
+                val mergedAllApps = remember(deviceApps) {
+                    if (deviceApps.isEmpty()) {
+                        listOf(
+                            "TikTok", "YouTube", "Instagram", "Facebook", "Twitter", "Slack",
+                            "Notion", "WhatsApp", "Spotify", "Chrome", "Gmail", "Netflix", "Reddit"
+                        ).map { com.example.ui.components.InstalledAppInfo(it, "", null) }
+                    } else {
+                        deviceApps
+                    }
+                }
+
+                var classifierSearchQuery by remember { mutableStateOf("") }
+
+                val filteredApps = remember(mergedAllApps, classifierSearchQuery) {
+                    if (classifierSearchQuery.isBlank()) mergedAllApps
+                    else mergedAllApps.filter { it.label.contains(classifierSearchQuery, ignoreCase = true) }
+                }
+
+                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                    // Loading indicator while fetching apps
+                    if (isLoadingApps) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(modifier = Modifier.size(40.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Loading your apps...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                    } else {
+                    // Purpose Card for classification
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "🧠 Select & Categorize Distractions",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Set any app below as a Distraction ⚠️ to lock it completely during focus hours, or Productive ✅ to exempt it. FocusFlow shields active locks immediately.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+
+                     // SEARCH FILTER FIELD
+                    OutlinedTextField(
+                        value = classifierSearchQuery,
+                        onValueChange = { classifierSearchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        placeholder = { Text("Search phone apps to classify (e.g., YouTube)...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search icon") },
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    // CLASSIFIED HEADER
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "My Focus Classification Manifest",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        TextButton(
+                            onClick = { viewModel.clearAllUsages() },
+                            modifier = Modifier.testTag("app_manager_clear_all")
+                        ) {
+                            Text("Reset All", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (filteredApps.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No apps match \"$classifierSearchQuery\"", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                        }
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            filteredApps.forEach { appInfo ->
+                                val appItem = appInfo.label
+                                val existingRecord = usages.firstOrNull { it.appName.equals(appItem, ignoreCase = true) }
+                                val currentCategory = existingRecord?.category
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("app_manager_item_${appItem}"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = when (currentCategory) {
+                                            "Distraction" -> Color(0xFFFFEBEE).copy(alpha = 0.25f)
+                                            "Productive" -> Color(0xFFE8F5E9).copy(alpha = 0.25f)
+                                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                        }
+                                    )
+                                ) {
+                                    // Main Column layout (avoids horizontal overflow)
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        // Top Row: Icon + App name/status
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            com.example.ui.components.AppIcon(
+                                                appName = appItem,
+                                                packageName = appInfo.packageName.ifBlank { null },
+                                                isProductive = currentCategory == "Productive",
+                                                size = 44.dp
+                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    appItem,
+                                                    fontWeight = FontWeight.Black,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = when (currentCategory) {
+                                                        "Distraction" -> "Distraction ⚠️"
+                                                        "Productive" -> "Productive ✅"
+                                                        else -> "Unclassified"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = when (currentCategory) {
+                                                        "Distraction" -> Color(0xFFE53935)
+                                                        "Productive" -> Color(0xFF2EBD6B)
+                                                        else -> MaterialTheme.colorScheme.outline
+                                                    },
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        // Bottom Row: Action buttons + Block toggle
+                                        val activeLockSchedule = schedules.firstOrNull { it.appName.equals(appItem, ignoreCase = true) }
+                                        val isBlocked = activeLockSchedule?.isLocked == true
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Category buttons
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Button(
+                                                    onClick = {
+                                                        if (existingRecord != null) {
+                                                            viewModel.updateUsageRecord(existingRecord.copy(category = "Distraction"))
+                                                        } else {
+                                                            viewModel.insertUsageRecord(
+                                                                appName = appItem,
+                                                                usageMinutes = 0,
+                                                                category = "Distraction"
+                                                            )
+                                                        }
+                                                        Toast.makeText(context, "⚠️ $appItem set as Distraction!", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = if (currentCategory == "Distraction") Color(0xFFE53935) else MaterialTheme.colorScheme.surfaceVariant
+                                                    ),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Distraction",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (currentCategory == "Distraction") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                Button(
+                                                    onClick = {
+                                                        if (existingRecord != null) {
+                                                            viewModel.updateUsageRecord(existingRecord.copy(category = "Productive"))
+                                                        } else {
+                                                            viewModel.insertUsageRecord(
+                                                                appName = appItem,
+                                                                usageMinutes = 0,
+                                                                category = "Productive"
+                                                            )
+                                                        }
+                                                        Toast.makeText(context, "✅ $appItem set as Productive!", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = if (currentCategory == "Productive") Color(0xFF2EBD6B) else MaterialTheme.colorScheme.surfaceVariant
+                                                    ),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Productive",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (currentCategory == "Productive") Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+
+                                            // Block toggle (Only for Distractions)
+                                            if (currentCategory == "Distraction") {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (isBlocked) "🔒" else "🔓",
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                    Switch(
+                                                        checked = isBlocked,
+                                                        onCheckedChange = { active ->
+                                                            if (active) {
+                                                                val hasOverlay = android.provider.Settings.canDrawOverlays(context)
+                                                                val enabledServices = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+                                                                val hasAccessibility = enabledServices?.contains(context.packageName) == true
+                                                                if (!hasOverlay || !hasAccessibility) {
+                                                                    val missing = if (!hasOverlay && !hasAccessibility) "Overlay & Accessibility" else if (!hasOverlay) "Overlay" else "Accessibility"
+                                                                    Toast.makeText(context, "Missing permissions: $missing!", Toast.LENGTH_LONG).show()
+                                                                    showMissingPermissionsDialog = true
+                                                                } else {
+                                                                    viewModel.addLockSchedule(
+                                                                        appName = appItem,
+                                                                        startTime = "00:00",
+                                                                        endTime = "24:00",
+                                                                        days = "Daily",
+                                                                        todo = "Take a deep breath and step away from the screen.",
+                                                                        smsMsg = "FocusFlow: $appItem has been manually locked.",
+                                                                        cooldownMinutes = 0,
+                                                                        usageThresholdMinutes = 0
+                                                                    )
+                                                                    Toast.makeText(context, "🚫 App lock active for $appItem!", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            } else {
+                                                                schedules.filter { it.appName.equals(appItem, ignoreCase = true) }.forEach {
+                                                                    viewModel.deleteSchedule(it.id)
+                                                                }
+                                                                Toast.makeText(context, "✅ App lock disabled for $appItem.", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        },
+                                                        modifier = Modifier.testTag("app_manager_block_switch_${appItem}")
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } // end else not loading (items list)
+                } // end outer Column
+            } // end 2 ->
+        } // end when (homeActiveTab)
+    } // end LazyColumn
+    } // end Box
+    // --- PREMIUM OVERLAY CARD: SOUNDS & EFFECTS CUSTOMIZER ---
+    if (showSoundsEffectsSheet) {
+        AlertDialog(
+            onDismissRequest = { showSoundsEffectsSheet = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Sound Alerts",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Text(
+                        text = "Sounds & Effects",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                ) {
+                    // Sound effect enabled switch
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = "Speaker icon",
+                                    tint = if (soundEffectsOn) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Sound effect",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Switch(
+                                checked = soundEffectsOn,
+                                onCheckedChange = { viewModel.toggleSoundEffects(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF2196F3)
+                                )
+                            )
+                        }
+                    }
+
+                    // Sound choices list matches user screenshot
+                    if (soundEffectsOn) {
+                        val soundList = listOf(
+                            "Bamboo Chime 🎋" to 1,
+                            "Zen Temple Gong 🔔" to 3,
+                            "Sleeping Kitty Flute 🍃" to 5,
+                            "Quiet Mountain Spring 🌊" to 7,
+                            "Singing Bowl Chime 🍵" to 9
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                soundList.forEach { soundPair ->
+                                    val isSelected = selectedSoundName == soundPair.first
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.updateSelectedSound(soundPair.first, soundPair.second)
+                                                Toast.makeText(context, "Selected alert chime: ${soundPair.first}", Toast.LENGTH_SHORT).show()
+                                                
+                                                // Preview the sound
+                                                val soundResId = when (soundPair.first) {
+                                                    "Bamboo Chime 🎋" -> com.example.R.raw.bamboo_chime
+                                                    "Zen Temple Gong 🔔" -> com.example.R.raw.zen_temple_gong
+                                                    "Sleeping Kitty Flute 🍃" -> com.example.R.raw.sleeping_kitty_flute
+                                                    "Quiet Mountain Spring 🌊" -> com.example.R.raw.quiet_mountain_spring
+                                                    "Singing Bowl Chime 🍵" -> com.example.R.raw.singing_bowl_chime
+                                                    else -> com.example.R.raw.zen_temple_gong
+                                                }
+                                                try {
+                                                    com.example.ui.screens.SoundPreviewHelper.playPreview(context, soundResId, soundPair.second)
+                                                } catch (e: Exception) {}
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(18.dp)
+                                                    .border(
+                                                        width = 2.dp,
+                                                        color = if (isSelected) Color(0xFF2196F3) else MaterialTheme.colorScheme.outline,
+                                                        shape = CircleShape
+                                                    )
+                                                    .padding(3.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isSelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color(0xFF2196F3), CircleShape)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = soundPair.first,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
+                                        Text(
+                                            text = "${soundPair.second}s",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    if (soundPair != soundList.last()) {
+                                        Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Slider with subtract and add buttons
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Alert Volume",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${(soundVolume * 100).toInt()}%",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4CAF50)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val newVol = (soundVolume - 0.1f).coerceIn(0.0f, 1.0f)
+                                    viewModel.updateSoundVolume(newVol)
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text("-", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            }
+
+                            Slider(
+                                value = soundVolume,
+                                onValueChange = { viewModel.updateSoundVolume(it) },
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    activeTrackColor = Color(0xFF2196F3),
+                                    thumbColor = Color(0xFF2196F3)
+                                )
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    val newVol = (soundVolume + 0.1f).coerceIn(0.0f, 1.0f)
+                                    viewModel.updateSoundVolume(newVol)
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text("+", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            }
+                        }
+                    }
+
+                    // Vibration Switch
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Vibration icon",
+                                    tint = if (vibrationEnabled) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Vibration",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Switch(
+                                checked = vibrationEnabled,
+                                onCheckedChange = { viewModel.toggleVibration(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF2196F3)
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSoundsEffectsSheet = false },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
+                    shape = RoundedCornerShape(23.dp)
+                ) {
+                    Text("Done", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            }
+        )
+    }
+
+    // --- PREMIUM OVERLAY CARD: NOTIFICATION LOGS ---
+    if (showNotificationLogsSheet) {
+        AlertDialog(
+            onDismissRequest = { showNotificationLogsSheet = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Log History",
+                        tint = Color(0xFF2196F3),
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Text(
+                        text = "Notification Logs",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                ) {
+                    // Monitor active log tracker switch
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.List,
+                                    contentDescription = "List icon",
+                                    tint = if (logsTrackingEnabled) Color(0xFF2196F3) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Interactive logging",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Switch(
+                                checked = logsTrackingEnabled,
+                                onCheckedChange = { logsTrackingEnabled = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = Color(0xFF2196F3)
+                                )
+                            )
+                        }
+                    }
+
+                    // Notification log item rows
+                    if (logsTrackingEnabled) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)),
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        ) {
+                            if (notificationLogs.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "No notification logs captured yet.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            } else {
+                                LazyColumn(modifier = Modifier.padding(6.dp)) {
+                                    items(notificationLogs) { log ->
+                                        val indicatorColor = when (log.category) {
+                                            "Curfew" -> Color(0xFFFF5252)
+                                            "Streak" -> Color(0xFF4CAF50)
+                                            "Dopamine" -> Color(0xFF2196F3)
+                                            else -> Color(0xFFFFC107)
+                                        }
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.Top,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            // Indicator Circle
+                                            Box(
+                                                modifier = Modifier
+                                                    .padding(top = 4.dp)
+                                                    .size(8.dp)
+                                                    .background(indicatorColor, CircleShape)
+                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = log.title,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = log.message,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Text(
+                                                text = "Active",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 9.sp,
+                                                color = Color(0xFF2196F3),
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier
+                                                    .background(Color(0xFF2196F3).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Divider(
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                                            thickness = 0.5.dp,
+                                            modifier = Modifier.padding(vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Slider representation for Alert Intensity
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Logging Interval limit",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = when (alertFrequencyLevel.toInt()) {
+                                    1 -> "Low"
+                                    2 -> "Moderate"
+                                    3 -> "Standard"
+                                    4 -> "Aggressive"
+                                    else -> "Extreme ⚡"
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2196F3)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (alertFrequencyLevel > 1) viewModel.updateAlertFrequencyLevel(alertFrequencyLevel - 1f)
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text("-", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            }
+
+                            Slider(
+                                value = alertFrequencyLevel,
+                                onValueChange = { viewModel.updateAlertFrequencyLevel(it) },
+                                valueRange = 1f..5f,
+                                steps = 3,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    activeTrackColor = Color(0xFF2196F3),
+                                    thumbColor = Color(0xFF2196F3)
+                                )
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    if (alertFrequencyLevel < 5) viewModel.updateAlertFrequencyLevel(alertFrequencyLevel + 1f)
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text("+", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showNotificationLogsSheet = false },
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
+                    shape = RoundedCornerShape(23.dp)
+                ) {
+                    Text("Done", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            }
+        )
+    }
+
+    // SIMULATED HARNESS USAGE INJECT DIALOGUE
+    if (showAddUsageDialog) {
+        var minutesToInject by remember { mutableFloatStateOf(45f) }
+        var appNameSelection by remember { mutableStateOf("Instagram") }
+        var isProductiveChoice by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { showAddUsageDialog = false },
+            title = { Text("🔌 Inject Screentime Scroll", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Test how FocusFlow handles limit spikes dynamically by pushing usages past your daily target.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = appNameSelection,
+                        onValueChange = { appNameSelection = it },
+                        modifier = Modifier.fillMaxWidth().testTag("inject_app_textfield"),
+                        label = { Text("App Name") }
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Duration: ${minutesToInject.toInt()} mins", fontWeight = FontWeight.Bold)
+                    Slider(
+                        value = minutesToInject,
+                        onValueChange = { minutesToInject = it },
+                        valueRange = 5f..150f,
+                        steps = 29
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = !isProductiveChoice, onClick = { isProductiveChoice = false })
+                        Text("Distraction Scroll", modifier = Modifier.padding(end = 16.dp))
+                        RadioButton(selected = isProductiveChoice, onClick = { isProductiveChoice = true })
+                        Text("Productive Work")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.testTag("inject_confirm_button"),
+                    onClick = {
+                        viewModel.insertUsageRecord(
+                            appName = appNameSelection,
+                            usageMinutes = minutesToInject.toInt(),
+                            category = if (isProductiveChoice) "Productive" else "Distraction"
+                        )
+                        showAddUsageDialog = false
+                    }
+                ) {
+                    Text("Inject", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddUsageDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // FOCUS PREFERENCES / SETTINGS DIALOG
+    if (showSettingsDialog) {
+        var tempGoal by remember { mutableStateOf(dailyScreentimeGoalMinutes.toString()) }
+        var tempPrevTime by remember { mutableStateOf(previousScreentimeMinutes.toString()) }
+
+        LaunchedEffect(dailyScreentimeGoalMinutes) {
+            tempGoal = dailyScreentimeGoalMinutes.toString()
+        }
+        LaunchedEffect(previousScreentimeMinutes) {
+            tempPrevTime = previousScreentimeMinutes.toString()
+        }
+
+        AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Focus Preferences ⚙️", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+
+
+                    item {
+                        Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "CUSTOMIZE METRICS BASES",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Daily Goal minutes field
+                        OutlinedTextField(
+                            value = tempGoal,
+                            onValueChange = { 
+                                tempGoal = it
+                                it.toIntOrNull()?.let { minutes ->
+                                    if (minutes in 10..480) viewModel.updateDailyScreentimeGoal(minutes)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("settings_goal_input"),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            label = { Text("Daily Screentime Goal (minutes)") },
+                            trailingIcon = { Text("min") }
+                        )
+
+                        // Yesterday average minutes field removed because it is now dynamic
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "HOMESCREEN WIDGET",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Pin the FocusFlow widget to your homescreen to easily track your daily progress and pulse score.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+                                    val myProvider = android.content.ComponentName(context, com.example.service.FocusFlowWidgetProvider::class.java)
+                                    if (appWidgetManager.isRequestPinAppWidgetSupported) {
+                                        appWidgetManager.requestPinAppWidget(myProvider, null, null)
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Pinning widgets is not supported on this launcher.", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    android.widget.Toast.makeText(context, "Widget pinning requires Android 8.0 or higher. You can manually add it from your launcher.", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth().testTag("settings_pin_widget_button")
+                        ) {
+                            Text("Pin Widget to Home Screen 📌", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "ONBOARDING SURVEY RETAKE",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Relaunch the coaching setup to recalculate base digital limits based on user roles and bedtime schedule.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                showSettingsDialog = false
+                                viewModel.restartTutorial()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.fillMaxWidth().testTag("settings_reset_survey_button")
+                        ) {
+                            Text("Reset & Rerun Survey 🎯", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSettingsDialog = false },
+                    modifier = Modifier.testTag("settings_confirm_button")
+                ) {
+                    Text("Apply & Close", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (showMissingPermissionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showMissingPermissionsDialog = false },
+            title = { Text("Permissions Required ⚠️", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("To manually lock an application, FocusFlow needs the following permissions to actively block the screen:")
+                    
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:${context.packageName}")
+                                )
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e2: Exception) {
+                                    Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant 'Display Over Other Apps'")
+                    }
+                    
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (e2: Exception) {
+                                    Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant Accessibility Service")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showMissingPermissionsDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    // Permission Guide pop-up Suggestion UI
+    if (showPermissionGuideDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionGuideDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Shield Guard",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text("FocusFlow Setup Suggestions 🛡️", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "FocusFlow requires Accessibility Services to detect when a restricted app is launched so it can immediately display a focus lock screen overlay over distracting apps.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Text(
+                        text = "Privacy Guarantee: No personal data, screen content, or typing data is collected, transmitted, or shared by this service. Processing happens strictly locally on your device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "1. Accessibility Service Overlay ⚙️",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Go to 'Settings > Accessibility > FocusFlow' and activate the service. This allows FocusFlow to intercept restricted apps and construct lock intervention shields during curfew schedules.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        try {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            context.startActivity(intent)
+                                        } catch (e2: Exception) {
+                                            Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Open Accessibility Settings", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "2. Device Administrator Protocol 🛡️",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Accept when prompted by Android to enable device administrator permissions. This protects curfew locks from easy deletion and strengthens habit redirection triggers.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "3. Display Over Other Apps 📱",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Go to 'Settings > Apps > Special app access > Display over other apps' and allow FocusFlow. This is REQUIRED to forcefully pop up the lock screen overlay when you open a blocked app.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${context.packageName}")
+                                        )
+                                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        try {
+                                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            context.startActivity(intent)
+                                        } catch (e2: Exception) {
+                                            Toast.makeText(context, "Please open Settings manually", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Open Overlay Settings", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermissionGuideDialog = false
+                        viewModel.setAccessibilityPermissionGranted(true)
+                        viewModel.setUsageAccessPermissionGranted(true)
+                        Toast.makeText(context, "✨ Permissions Auto-Granted (Simulation Approved)!", Toast.LENGTH_LONG).show()
+                    },
+                    modifier = Modifier.testTag("pop_grant_perms")
+                ) {
+                    Text("Grant / Allow ✨", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showPermissionGuideDialog = false },
+                    modifier = Modifier.testTag("pop_dismiss_guide")
+                ) {
+                    Text("Decline / Close")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun AppLogoIcon(
+    appName: String,
+    modifier: Modifier = Modifier,
+    isProductive: Boolean
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var appIconDrawable by remember(appName) { mutableStateOf<android.graphics.drawable.Drawable?>(null) }
+    
+    LaunchedEffect(appName) {
+        kotlin.runCatching {
+            val pm = context.packageManager
+            val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+            val matchedApp = apps.firstOrNull { app ->
+                val label = pm.getApplicationLabel(app).toString()
+                label.equals(appName, ignoreCase = true) || label.contains(appName, ignoreCase = true)
+            }
+            if (matchedApp != null) {
+                appIconDrawable = pm.getApplicationIcon(matchedApp)
+            }
+        }
+    }
+    
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(if (isProductive) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (appIconDrawable != null) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { ctx ->
+                    android.widget.ImageView(ctx).apply {
+                        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                        setImageDrawable(appIconDrawable)
+                    }
+                },
+                update = { imageView ->
+                    imageView.setImageDrawable(appIconDrawable)
+                },
+                modifier = Modifier.fillMaxSize().padding(4.dp)
+            )
+        } else {
+            val logoColor = when (appName.lowercase()) {
+                "tiktok" -> Color(0xFF000000)
+                "instagram", "ig" -> Color(0xFFE1306C)
+                "youtube", "yt" -> Color(0xFFFF0000)
+                "facebook", "fb" -> Color(0xFF1877F2)
+                "twitter", "x" -> Color(0xFF000000)
+                "chrome" -> Color(0xFF4285F4)
+                "slack" -> Color(0xFF4A154B)
+                "notion" -> Color(0xFF111111)
+                "gmail" -> Color(0xFFEA4335)
+                "whatsapp" -> Color(0xFF25D366)
+                "spotify" -> Color(0xFF1DB954)
+                else -> if (isProductive) Color(0xFF24A25A) else Color(0xFFD63C3C)
+            }
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(logoColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = appName.firstOrNull()?.toString()?.uppercase() ?: "?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White
+                )
+            }
+        }
+    }
+}
+

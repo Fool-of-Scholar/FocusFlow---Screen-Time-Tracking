@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root_hours"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_gradient_bg_hours"
+    android:padding="14dp">
+
+    <!-- Cat Mascot (right side, semi-transparent) -->
+    <ImageView
+        android:id="@+id/widget_mascot_hours"
+        android:layout_width="90dp"
+        android:layout_height="90dp"
+        android:layout_alignParentEnd="true"
+        android:layout_alignParentBottom="true"
+        android:src="@drawable/cat_mascot_full_view_nobg"
+        android:scaleType="fitEnd"
+        android:alpha="0.5" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_vertical">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/widget_header_hours"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="FocusFlow ⏰"
+                android:textColor="#C5CAE9"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_mode_indicator_hours"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="HOURS MODE"
+                android:textColor="#FFFFFF"
+                android:textSize="8sp"
+                android:textStyle="bold"
+                android:background="#00BFA5"
+                android:paddingLeft="6dp"
+                android:paddingRight="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp" />
+        </LinearLayout>
+
+        <!-- GOAL HOURS SECTION -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="3dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎯"
+                android:textSize="13sp"
+                android:layout_marginEnd="5dp" />
+
+            <TextView
+                android:id="@+id/widget_main_title_hours"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="0.0h / 2.5h"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:ellipsize="end"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/widget_progress_bar_hours"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="7dp"
+            android:layout_marginBottom="8dp"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="#FF6F00"
+            android:progressBackgroundTint="#37474F" />
+
+        <!-- SHIFT VS YESTERDAY HOURS SECTION -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="3dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📊"
+                android:textSize="13sp"
+                android:layout_marginEnd="5dp" />
+
+            <TextView
+                android:id="@+id/widget_subtitle_hours"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="No data yet"
+                android:textColor="#B0BEC5"
+                android:textSize="11sp"
+                android:ellipsize="end"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/widget_shift_bar_hours"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="7dp"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="#26C6DA"
+            android:progressBackgroundTint="#37474F" />
+
+    </LinearLayout>
+
+</RelativeLayout>
