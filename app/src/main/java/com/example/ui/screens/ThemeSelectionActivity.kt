@@ -261,7 +261,7 @@ fun ThemeSelectionScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                6 -> { // Gradient
+                3 -> { // Gradient
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         contentPadding = PaddingValues(16.dp),

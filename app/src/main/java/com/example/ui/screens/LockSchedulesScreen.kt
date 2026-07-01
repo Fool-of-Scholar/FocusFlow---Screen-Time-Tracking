@@ -36,7 +36,7 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
     var appNameField by remember { mutableStateOf("Deep Work Focus") }
     var startTimeField by remember { mutableStateOf("22:00") }
     var endTimeField by remember { mutableStateOf("23:30") }
-    var daysField by remember { mutableStateOf("Daily") }
+    var selectedDays by remember { mutableStateOf(setOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")) }
     var todoField by remember { mutableStateOf("Read an offline paper handbook, stretch.") }
     var smsAlertField by remember { mutableStateOf("FocusFlow curfews unlocked! Rest well offline.") }
     var cooldownField by remember { mutableStateOf("0") }
@@ -207,7 +207,7 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                                     appNameField = deck.appName
                                     startTimeField = deck.startTime
                                     endTimeField = deck.endTime
-                                    daysField = deck.daysOfWeek
+                                    selectedDays = parseDaysOfWeek(deck.daysOfWeek)
                                     todoField = deck.todoWhileLocked
                                     smsAlertField = deck.customAlertSms
                                     cooldownField = deck.cooldownMinutes.toString()
@@ -320,7 +320,7 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
         // DEPLOYED RUNNING LIST
         item {
             Text(
-                text = "Live Active Restricting Pipelines",
+                text = "Pipelines Schedule",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = 8.dp)
@@ -546,12 +546,94 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                     }
 
                     item {
-                        OutlinedTextField(
-                            value = daysField,
-                            onValueChange = { daysField = it },
-                            modifier = Modifier.fillMaxWidth().testTag("add_days_textfield"),
-                            label = { Text("Days cadence (e.g. Daily)") }
-                        )
+                        Text("Active Days", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 4.dp, top = 8.dp))
+                        
+                        val allDays = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                        val topDays = allDays.take(5)
+                        val bottomDays = allDays.drop(5)
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            topDays.forEach { day ->
+                                val isSelected = selectedDays.contains(day)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        if (isSelected) {
+                                            selectedDays = selectedDays - day
+                                        } else {
+                                            selectedDays = selectedDays + day
+                                        }
+                                    },
+                                    label = { 
+                                        val shortName = when(day) {
+                                            "Thu" -> "Th"
+                                            "Sat" -> "Sa"
+                                            "Sun" -> "Su"
+                                            else -> day.first().toString()
+                                        }
+                                        Text(shortName) 
+                                    },
+                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            bottomDays.forEach { day ->
+                                val isSelected = selectedDays.contains(day)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        if (isSelected) {
+                                            selectedDays = selectedDays - day
+                                        } else {
+                                            selectedDays = selectedDays + day
+                                        }
+                                    },
+                                    label = { 
+                                        val shortName = when(day) {
+                                            "Thu" -> "Th"
+                                            "Sat" -> "Sa"
+                                            "Sun" -> "Su"
+                                            else -> day.first().toString()
+                                        }
+                                        Text(shortName) 
+                                    },
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                )
+                            }
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SuggestionChip(
+                                onClick = { selectedDays = setOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun") },
+                                label = { Text("Daily") }
+                            )
+                            SuggestionChip(
+                                onClick = { selectedDays = setOf("Mon", "Tue", "Wed", "Thu", "Fri") },
+                                label = { Text("Weekdays") }
+                            )
+                            SuggestionChip(
+                                onClick = { selectedDays = setOf("Sat", "Sun") },
+                                label = { Text("Weekends") }
+                            )
+                        }
                     }
 
                     item {
@@ -597,7 +679,7 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                                     appName = appNameField,
                                     startTime = startTimeField,
                                     endTime = endTimeField,
-                                    days = daysField,
+                                    days = formatDaysOfWeek(selectedDays),
                                     todo = todoField,
                                     smsMsg = smsAlertField,
                                     cooldownMinutes = 0,
@@ -618,7 +700,7 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
                                     appName = appNameField,
                                     startTime = startTimeField,
                                     endTime = endTimeField,
-                                    days = daysField,
+                                    days = formatDaysOfWeek(selectedDays),
                                     todo = todoField,
                                     smsMsg = smsAlertField,
                                     cooldownMinutes = 0,
@@ -639,4 +721,31 @@ fun LockSchedulesScreen(viewModel: FocusViewModel) {
             }
         )
     }
+}
+
+fun parseDaysOfWeek(daysStr: String): Set<String> {
+    val lower = daysStr.lowercase()
+    if (lower.contains("daily") || lower.contains("everyday")) return setOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    if (lower.contains("weekdays")) return setOf("Mon", "Tue", "Wed", "Thu", "Fri")
+    if (lower.contains("weekends")) return setOf("Sat", "Sun")
+    
+    val currentSet = mutableSetOf<String>()
+    if (lower.contains("mon")) currentSet.add("Mon")
+    if (lower.contains("tue")) currentSet.add("Tue")
+    if (lower.contains("wed")) currentSet.add("Wed")
+    if (lower.contains("thu")) currentSet.add("Thu")
+    if (lower.contains("fri")) currentSet.add("Fri")
+    if (lower.contains("sat")) currentSet.add("Sat")
+    if (lower.contains("sun")) currentSet.add("Sun")
+    return currentSet
+}
+
+fun formatDaysOfWeek(days: Set<String>): String {
+    if (days.size == 7) return "Daily"
+    if (days.size == 5 && days.containsAll(setOf("Mon", "Tue", "Wed", "Thu", "Fri"))) return "Weekdays"
+    if (days.size == 2 && days.containsAll(setOf("Sat", "Sun"))) return "Weekends"
+    if (days.isEmpty()) return "None"
+    
+    val order = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    return days.sortedBy { order.indexOf(it) }.joinToString(", ")
 }

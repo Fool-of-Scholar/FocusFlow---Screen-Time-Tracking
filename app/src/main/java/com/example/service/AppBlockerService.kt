@@ -203,6 +203,7 @@ class AppBlockerService : AccessibilityService() {
                 for (sched in schedules) {
                     if (!sched.isLocked) continue
                     if (!isTimeWithinSchedule(sched.startTime, sched.endTime)) continue
+                    if (!isDayWithinSchedule(sched.daysOfWeek)) continue
                     
                     val isManualLock = sched.todoWhileLocked == "Take a deep breath and step away from the screen."
                     
@@ -276,6 +277,35 @@ class AppBlockerService : AccessibilityService() {
         } catch (e: Exception) {
             return false
         }
+    }
+
+    private fun isDayWithinSchedule(cadence: String): Boolean {
+        val calendar = Calendar.getInstance()
+        val currentDay = calendar.get(Calendar.DAY_OF_WEEK) // 1 = Sunday, 2 = Monday...
+        
+        val cadenceLower = cadence.lowercase()
+        if (cadenceLower.contains("daily") || cadenceLower.contains("everyday")) return true
+        
+        val isWeekend = currentDay == Calendar.SATURDAY || currentDay == Calendar.SUNDAY
+        if (cadenceLower.contains("weekends") && isWeekend) return true
+        if (cadenceLower.contains("weekdays") && !isWeekend) return true
+        
+        val dayMap = mapOf(
+            "mon" to Calendar.MONDAY,
+            "tue" to Calendar.TUESDAY,
+            "wed" to Calendar.WEDNESDAY,
+            "thu" to Calendar.THURSDAY,
+            "fri" to Calendar.FRIDAY,
+            "sat" to Calendar.SATURDAY,
+            "sun" to Calendar.SUNDAY
+        )
+        
+        for ((dayStr, calendarDay) in dayMap) {
+            if (cadenceLower.contains(dayStr) && currentDay == calendarDay) {
+                return true
+            }
+        }
+        return false
     }
 
     override fun onInterrupt() {

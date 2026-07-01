@@ -688,10 +688,10 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val appToLock = when {
-            struggle.contains("Social", ignoreCase = true) -> "Instagram"
+            struggle.contains("Social", ignoreCase = true) -> "Personalize Schedule"
             struggle.contains("Video", ignoreCase = true) -> "YouTube"
             struggle.contains("Work", ignoreCase = true) -> "Slack"
-            else -> "Instagram"
+            else -> "Personalize Schedule"
         }
 
         viewModelScope.launch {

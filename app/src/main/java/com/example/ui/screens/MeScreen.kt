@@ -696,7 +696,7 @@ fun MeScreen(
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "Fine-tune your maximum allowed phone active minutes per day. Mascot coach will alert you upon reaching target thresholds.",
+                            "Fine-tune your maximum allowed phone active minutes per day. (Minimum: 10 mins, Maximum: 480 mins / 8 hours).",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary
                         )

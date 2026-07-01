@@ -177,7 +177,7 @@ fun AnimationSelectionScreen(onBack: () -> Unit) {
                                         .aspectRatio(0.6f)
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
-                                            ThemePreferences.setBackgroundColor(context, uriString)
+                                            ThemePreferences.setAnimationUrl(context, uriString)
                                             Toast.makeText(context, "Custom Animation Applied!", Toast.LENGTH_SHORT).show()
                                             onBack()
                                         }
